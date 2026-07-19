@@ -24,6 +24,13 @@ public sealed class EtwListener : IDisposable
 
     private readonly ConcurrentDictionary<Guid, (DateTime Timestamp, string Process, string FilePath)> _pendingStarts = new();
 
+    // Orphaned Start events (Stop lost or never sent) are pruned after this age,
+    // measured on the event-stream clock so live and replay behave the same.
+    private static readonly TimeSpan PendingStartMaxAge = TimeSpan.FromMinutes(10);
+    private const int EventsBetweenPrunes = 4096;
+    private int _eventsSinceLastPrune;
+    private DateTime _newestTimestamp = DateTime.MinValue;
+
     public IObservable<EventInfo> Events => _eventSubject;
 
     /// <summary>Emits the running total of raw ETW events received (all opcodes, not just matched pairs).</summary>
@@ -77,6 +84,14 @@ public sealed class EtwListener : IDisposable
     {
         _rawEventCount.OnNext(Interlocked.Increment(ref _rawCount));
 
+        // OnEvent runs on the single Process() thread — plain fields are safe.
+        if (data.TimeStamp > _newestTimestamp) _newestTimestamp = data.TimeStamp;
+        if (++_eventsSinceLastPrune >= EventsBetweenPrunes)
+        {
+            _eventsSinceLastPrune = 0;
+            PruneStalePendingStarts();
+        }
+
         switch ((MicrosoftAntimalwareEngineEvents)data.ID)
         {
             case StreamscanrequestStart:
@@ -105,6 +120,17 @@ public sealed class EtwListener : IDisposable
                 }
 
                 break;
+        }
+    }
+
+    private void PruneStalePendingStarts()
+    {
+        if (_pendingStarts.IsEmpty) return;
+        var cutoff = _newestTimestamp - PendingStartMaxAge;
+        foreach (var kvp in _pendingStarts)
+        {
+            if (kvp.Value.Timestamp < cutoff)
+                _pendingStarts.TryRemove(kvp.Key, out _);
         }
     }
 

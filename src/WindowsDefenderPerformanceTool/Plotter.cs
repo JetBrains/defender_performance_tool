@@ -15,6 +15,10 @@ public sealed class Plotter : IDisposable
     private const int ColumnCount = 16;
     private const int MaxNamedProcesses = 4;
 
+    // Safety cap on 1-second buckets (24h). Live mode prunes to the sliding window every
+    // tick; this only bounds pathological cases like clock skew or multi-day replays.
+    private const int MaxBuckets = 24 * 60 * 60;
+
     private readonly WpfPlot _wpfPlot;
     private readonly IDisposable _subscription;
     private readonly DispatcherTimer _timer;
@@ -86,6 +90,13 @@ public sealed class Plotter : IDisposable
 
         if (maxTs == DateTime.MinValue.Ticks)
             return; // No events yet — chart is in initial state
+
+        if (_buckets.Count > MaxBuckets)
+        {
+            long cutoffKey = maxTs / TimeSpan.TicksPerSecond - MaxBuckets;
+            foreach (var key in _buckets.Keys.Where(k => k < cutoffKey).ToList())
+                _buckets.TryRemove(key, out _);
+        }
 
         var maxTimestamp  = new DateTime(maxTs);
         var minTimestamp  = new DateTime(minTs);

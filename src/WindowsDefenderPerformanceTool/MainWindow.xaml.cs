@@ -17,6 +17,10 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
 
         DragOver += OnDragOver;
         Drop += OnDrop;
+
+        // Stop the ViewModel's timers when the window closes (idempotent — safe
+        // alongside the main window's `using` in Program.cs).
+        Closed += (_, __) => ViewModel?.Dispose();
     }
 
     private static void OnDragOver(object sender, DragEventArgs e)

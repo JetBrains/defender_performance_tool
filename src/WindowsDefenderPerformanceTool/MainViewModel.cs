@@ -27,6 +27,11 @@ public class MainViewModel : ReactiveObject, IDisposable
 {
     private const int TopN = 10;
 
+    // Stats dictionary bounds: pruned to the largest entries when exceeded, so long
+    // sessions can't grow memory or RefreshTopLists() cost without limit.
+    private const int MaxTrackedEntries = 10_000;
+    private const int PruneToEntries = 1_000;
+
     // Central relay: both live and file listeners feed into this
     private readonly Subject<EventInfo> _eventsRelay = new();
 
@@ -231,8 +236,23 @@ public class MainViewModel : ReactiveObject, IDisposable
             }
         }
 
+        PruneIfNeeded(_processTotals);
+        PruneIfNeeded(_fileTotals);
+
         TotalScannedSeconds = _totalScannedMs / 1000.0;
         RefreshTopLists();
+    }
+
+    private static void PruneIfNeeded(Dictionary<string, double> totals)
+    {
+        if (totals.Count <= MaxTrackedEntries) return;
+
+        var survivors = totals.OrderByDescending(kvp => kvp.Value)
+                              .Take(PruneToEntries)
+                              .ToList();
+        totals.Clear();
+        foreach (var kvp in survivors)
+            totals[kvp.Key] = kvp.Value;
     }
 
     private void PollCpuTimes()
@@ -436,8 +456,13 @@ public class MainViewModel : ReactiveObject, IDisposable
         }
     }
 
+    private bool _disposed;
+
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
+
         _cpuTimer.Stop();
         _statsSubscription?.Dispose();
         _liveSubscription?.Dispose();
