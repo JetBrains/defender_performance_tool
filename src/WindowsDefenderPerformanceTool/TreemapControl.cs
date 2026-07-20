@@ -1,7 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Security.Principal;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace WindowsDefenderPerformanceTool;
@@ -11,6 +15,10 @@ namespace WindowsDefenderPerformanceTool;
 /// proportional to total scan time, nesting follows the directory structure. Each top-level
 /// segment (typically a drive) gets its own hue, lightened with depth. Rebuilt whenever
 /// <see cref="Root"/> or the control size changes.
+///
+/// Tiles are interactive: right-clicking opens a context menu (copy path, open in Explorer,
+/// add to Defender exclusions, zoom in/out), and double-clicking a directory zooms into it.
+/// While zoomed, a breadcrumb overlay at the top left jumps back to the overview.
 /// </summary>
 public sealed class TreemapControl : Canvas
 {
@@ -44,7 +52,7 @@ public sealed class TreemapControl : Canvas
             nameof(Root),
             typeof(ScanTreeNode),
             typeof(TreemapControl),
-            new FrameworkPropertyMetadata(null, (d, _) => ((TreemapControl)d).Rebuild()));
+            new FrameworkPropertyMetadata(null, (d, _) => ((TreemapControl)d).OnRootChanged()));
 
     public ScanTreeNode? Root
     {
@@ -54,9 +62,44 @@ public sealed class TreemapControl : Canvas
 
     private int _renderedNodes;
 
+    // Zoom state: path from Root to the currently displayed node. Empty = full overview.
+    private readonly List<ScanTreeNode> _zoomStack = new();
+
+    private ScanTreeNode? ZoomedNode => _zoomStack.Count > 0 ? _zoomStack[_zoomStack.Count - 1] : null;
+
+    /// <summary>Zooms into a directory node so it fills the whole control.</summary>
+    public void ZoomIn(ScanTreeNode node)
+    {
+        if (node.Children.Count == 0) return;
+        _zoomStack.Add(node);
+        Rebuild();
+    }
+
+    /// <summary>Goes one zoom level up; no-op when already at the overview.</summary>
+    public void ZoomOut()
+    {
+        if (_zoomStack.Count == 0) return;
+        _zoomStack.RemoveAt(_zoomStack.Count - 1);
+        Rebuild();
+    }
+
+    private void ResetZoom()
+    {
+        if (_zoomStack.Count == 0) return;
+        _zoomStack.Clear();
+        Rebuild();
+    }
+
     protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
     {
         base.OnRenderSizeChanged(sizeInfo);
+        Rebuild();
+    }
+
+    // New data invalidates any zoom — the zoomed node may no longer exist in the new tree.
+    private void OnRootChanged()
+    {
+        _zoomStack.Clear();
         Rebuild();
     }
 
@@ -76,7 +119,11 @@ public sealed class TreemapControl : Canvas
             return;
         }
 
-        RenderChildren(root, new Rect(0, 0, width, height), depth: 0, parentColor: default);
+        var displayRoot = ZoomedNode ?? root;
+        RenderChildren(displayRoot, new Rect(0, 0, width, height), depth: 0, parentColor: default);
+
+        if (ZoomedNode != null)
+            AddBreadcrumbOverlay(ZoomedNode);
     }
 
     private void RenderChildren(ScanTreeNode parent, Rect area, int depth, Color parentColor)
@@ -132,7 +179,7 @@ public sealed class TreemapControl : Canvas
     /// </summary>
     private List<Item> SelectVisibleItems(ScanTreeNode parent)
     {
-        var minWeight = Root!.TotalSeconds * MinNodeFraction;
+        var minWeight = (ZoomedNode ?? Root!).TotalSeconds * MinNodeFraction;
         var items = new List<Item>();
         double otherWeight = 0;
         var otherCount = 0;
@@ -203,18 +250,197 @@ public sealed class TreemapControl : Canvas
         border.Width = r.Width;
         border.Height = r.Height;
         border.ToolTip = BuildToolTip(item);
+
+        if (item.Node is { } node)
+        {
+            border.ContextMenu = BuildContextMenu(node);
+            if (node.Children.Count > 0)
+            {
+                border.Cursor = Cursors.Hand;
+                border.MouseLeftButtonDown += (_, e) =>
+                {
+                    if (e.ClickCount == 2)
+                    {
+                        ZoomIn(node);
+                        e.Handled = true;
+                    }
+                };
+            }
+        }
+
         Canvas.SetLeft(border, r.X);
         Canvas.SetTop(border, r.Y);
         Children.Add(border);
+    }
+
+    /// <summary>
+    /// Small overlay shown while zoomed in: displays the current path and jumps back
+    /// to the full overview when clicked.
+    /// </summary>
+    private void AddBreadcrumbOverlay(ScanTreeNode zoomed)
+    {
+        var button = new Button
+        {
+            Content = $"\u2190 {zoomed.FullPath}  (back to overview)",
+            Padding = new Thickness(6, 2, 6, 2),
+            FontSize = 11,
+            ToolTip = "Click to reset zoom (or right-click a tile \u2192 Zoom Out)",
+        };
+        button.Click += (_, __) => ResetZoom();
+        button.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        button.Width = Math.Min(button.DesiredSize.Width, Math.Max(0, ActualWidth - 8));
+        Canvas.SetLeft(button, 4);
+        Canvas.SetTop(button, 4);
+        Children.Add(button);
+    }
+
+    // --- Tile actions ---
+
+    private ContextMenu BuildContextMenu(ScanTreeNode node)
+    {
+        var menu = new ContextMenu();
+
+        menu.Items.Add(new MenuItem
+        {
+            Header = "Copy Path",
+            Icon = new TextBlock { Text = "\U0001F4CB" },
+            Command = new RelayCommand(() => Clipboard.SetText(node.FullPath)),
+        });
+
+        menu.Items.Add(new MenuItem
+        {
+            Header = "Open in Explorer",
+            Icon = new TextBlock { Text = "\U0001F4C1" },
+            Command = new RelayCommand(() => OpenInExplorer(node)),
+        });
+
+        menu.Items.Add(new MenuItem
+        {
+            Header = "Add to Defender Exclusion\u2026",
+            Icon = new TextBlock { Text = "\U0001F6E1" },
+            Command = new RelayCommand(() => AddToDefenderExclusion(node)),
+        });
+
+        menu.Items.Add(new Separator());
+
+        menu.Items.Add(new MenuItem
+        {
+            Header = "Zoom In",
+            InputGestureText = "Double-click",
+            Command = new RelayCommand(() => ZoomIn(node)),
+            IsEnabled = node.Children.Count > 0,
+        });
+
+        menu.Items.Add(new MenuItem
+        {
+            Header = "Zoom Out",
+            Command = new RelayCommand(ZoomOut),
+            IsEnabled = ZoomedNode != null,
+        });
+
+        return menu;
+    }
+
+    private static void OpenInExplorer(ScanTreeNode node)
+    {
+        try
+        {
+            // Directories open directly; files are shown selected in their parent folder.
+            var arguments = node.Children.Count > 0
+                ? $"\"{node.FullPath}\""
+                : $"/select,\"{node.FullPath}\"";
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = arguments,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Could not open Explorer for:\n{node.FullPath}\n\n{ex.Message}",
+                "Open in Explorer", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private static void AddToDefenderExclusion(ScanTreeNode node)
+    {
+        var confirm = MessageBox.Show(
+            $"Add this path to the Windows Defender exclusion list?\n\n{node.FullPath}\n\n" +
+            "Files under an excluded path are no longer scanned.",
+            "Add Defender Exclusion", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (confirm != MessageBoxResult.Yes) return;
+
+        var escaped = node.FullPath.Replace("'", "''");
+        var arguments = $"-NoProfile -Command \"Add-MpPreference -ExclusionPath '{escaped}'\"";
+        var isAdmin = new WindowsPrincipal(WindowsIdentity.GetCurrent())
+            .IsInRole(WindowsBuiltInRole.Administrator);
+
+        try
+        {
+            var psi = new ProcessStartInfo("powershell.exe", arguments);
+            if (isAdmin)
+            {
+                psi.CreateNoWindow = true;
+                psi.WindowStyle = ProcessWindowStyle.Hidden;
+                using var process = Process.Start(psi);
+                process!.WaitForExit();
+                if (process.ExitCode == 0)
+                {
+                    MessageBox.Show($"Added to Defender exclusions:\n{node.FullPath}",
+                        "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        $"Add-MpPreference failed (exit code {process.ExitCode}).\n" +
+                        "Try running the tool as administrator.",
+                        "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            else
+            {
+                // Not elevated — relaunch the command with a UAC prompt.
+                psi.Verb = "runas";
+                psi.UseShellExecute = true;
+                Process.Start(psi);
+            }
+        }
+        catch (Win32Exception)
+        {
+            // User cancelled the UAC prompt — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Failed to add the exclusion:\n\n{ex.Message}",
+                "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    // Minimal ICommand so menu items stay declarative without pulling in the ViewModel.
+    private sealed class RelayCommand : ICommand
+    {
+        private readonly Action _action;
+        public RelayCommand(Action action) => _action = action;
+#pragma warning disable CS0067 // CanExecuteChanged is never used — required by ICommand
+        public event EventHandler? CanExecuteChanged;
+#pragma warning restore CS0067
+        public bool CanExecute(object? parameter) => true;
+        public void Execute(object? parameter) => _action();
     }
 
     private string BuildToolTip(Item item)
     {
         var total = Root?.TotalSeconds ?? 0;
         var pct = total > 0 ? item.Weight / total * 100 : 0;
-        return item.Node is { } node
-            ? $"{node.FullPath}\n{node.TotalSeconds:F2}s ({pct:F1}%)"
-            : $"{item.OtherCount} smaller paths\n{item.Weight:F2}s ({pct:F1}%)";
+        if (item.Node is not { } node)
+            return $"{item.OtherCount} smaller paths\n{item.Weight:F2}s ({pct:F1}%)";
+        var zoomHint = node.Children.Count > 0
+            ? "\nDouble-click to zoom in \u00b7 right-click for more actions"
+            : "\nRight-click for actions";
+        return $"{node.FullPath}\n{node.TotalSeconds:F2}s ({pct:F1}%){zoomHint}";
     }
 
     private void ShowPlaceholder(string text)

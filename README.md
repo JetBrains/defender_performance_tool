@@ -14,6 +14,8 @@ PowerShell cmdlet.
 - Displays scan durations per process in a stacked bar chart
 - Drag and drop snapshots onto the window to analyse the dropped items
 - CSV export when more than one snapshot is dragged to the window
+- Interactive treemap of where scan time went: right-click a tile to copy its path, open it
+  in Explorer, add it to the Defender exclusion list, or zoom in/out (double-click also zooms)
 
 ## Lightweight CPU-time TUI
 
