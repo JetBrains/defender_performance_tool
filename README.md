@@ -15,7 +15,8 @@ PowerShell cmdlet.
 - Drag and drop snapshots onto the window to analyse the dropped items
 - CSV export when more than one snapshot is dragged to the window
 - Interactive treemap of where scan time went: right-click a tile to copy its path, open it
-  in Explorer, add it to the Defender exclusion list, or zoom in/out (double-click also zooms)
+  in Explorer, add it to the Defender exclusion list, or zoom in/out (double-click also zooms).
+  Hovering highlights tiles and pauses live updates (orange frame) so the view stays stable
 
 ## Lightweight CPU-time TUI
 

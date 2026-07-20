@@ -61,8 +61,9 @@ internal static class EtlBatchExporter
 
                     if (!string.IsNullOrEmpty(info.FilePath))
                     {
-                        fileTotals.TryGetValue(info.FilePath, out var existing);
-                        fileTotals[info.FilePath] = existing + info.DurationMsec;
+                        var filePath = DevicePathConverter.ToDosPath(info.FilePath);
+                        fileTotals.TryGetValue(filePath, out var existing);
+                        fileTotals[filePath] = existing + info.DurationMsec;
                     }
                 },
                 _ => done.Set(),

@@ -238,8 +238,11 @@ public class MainViewModel : ReactiveObject, IDisposable
 
             if (!string.IsNullOrEmpty(info.FilePath))
             {
-                _fileTotals.TryGetValue(info.FilePath, out var existing);
-                _fileTotals[info.FilePath] = existing + info.DurationMsec;
+                // ETW reports NT device paths (\Device\HarddiskVolume3\…) — normalize to
+                // DOS paths so the treemap actions (Explorer, exclusions) can use them.
+                var filePath = DevicePathConverter.ToDosPath(info.FilePath);
+                _fileTotals.TryGetValue(filePath, out var existing);
+                _fileTotals[filePath] = existing + info.DurationMsec;
             }
         }
 

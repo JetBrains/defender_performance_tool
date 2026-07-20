@@ -19,6 +19,9 @@ namespace WindowsDefenderPerformanceTool;
 /// Tiles are interactive: right-clicking opens a context menu (copy path, open in Explorer,
 /// add to Defender exclusions, zoom in/out), and double-clicking a directory zooms into it.
 /// While zoomed, a breadcrumb overlay at the top left jumps back to the overview.
+/// Tiles are highlighted on hover. While the mouse is over the control, incoming data
+/// updates are paused (so the view doesn't change under the cursor or lose the zoom);
+/// this is indicated by an orange frame with a pause icon.
 /// </summary>
 public sealed class TreemapControl : Canvas
 {
@@ -62,6 +65,25 @@ public sealed class TreemapControl : Canvas
 
     private int _renderedNodes;
 
+    // What is actually rendered. Kept separate from the Root dependency property so that
+    // data updates arriving while the mouse hovers the control can be deferred: the user
+    // may be navigating a zoomed view, and swapping the tree would yank it away.
+    private ScanTreeNode? _currentTree;
+
+    // Pause-on-hover state: while paused, Root changes only set _pendingDataChange and
+    // are applied (with zoom reset) when the mouse leaves.
+    private bool _isPaused;
+    private bool _pendingDataChange;
+    private Border? _pauseFrame;
+    private TextBlock? _pauseIcon;
+
+    public TreemapControl()
+    {
+        // Transparent background so the whole area hit-tests and hover-pause also works
+        // over the gaps between tiles (null background would let hits fall through).
+        Background = Brushes.Transparent;
+    }
+
     // Zoom state: path from Root to the currently displayed node. Empty = full overview.
     private readonly List<ScanTreeNode> _zoomStack = new();
 
@@ -97,22 +119,89 @@ public sealed class TreemapControl : Canvas
     }
 
     // New data invalidates any zoom — the zoomed node may no longer exist in the new tree.
+    // While the mouse hovers the control the update is deferred until it leaves.
     private void OnRootChanged()
     {
+        if (_isPaused)
+        {
+            _pendingDataChange = true;
+            return;
+        }
+        _currentTree = Root;
         _zoomStack.Clear();
         Rebuild();
+    }
+
+    protected override void OnMouseEnter(MouseEventArgs e)
+    {
+        base.OnMouseEnter(e);
+        _isPaused = true;
+        ShowPauseOverlay();
+    }
+
+    protected override void OnMouseLeave(MouseEventArgs e)
+    {
+        base.OnMouseLeave(e);
+        _isPaused = false;
+        HidePauseOverlay();
+        if (_pendingDataChange)
+        {
+            _pendingDataChange = false;
+            _currentTree = Root;
+            _zoomStack.Clear();
+            Rebuild();
+        }
+    }
+
+    private void ShowPauseOverlay()
+    {
+        if (_pauseFrame != null || ActualWidth < 20 || ActualHeight < 20) return;
+
+        _pauseFrame = new Border
+        {
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0x8C, 0x00)),
+            BorderThickness = new Thickness(3),
+            IsHitTestVisible = false,
+            Width = ActualWidth,
+            Height = ActualHeight,
+        };
+        _pauseIcon = new TextBlock
+        {
+            Text = "\u23F8", // ⏸
+            FontSize = 13,
+            Foreground = Brushes.White,
+            Background = _pauseFrame.BorderBrush,
+            Padding = new Thickness(5, 2, 5, 2),
+            IsHitTestVisible = false,
+        };
+        Canvas.SetLeft(_pauseFrame, 0);
+        Canvas.SetTop(_pauseFrame, 0);
+        Canvas.SetTop(_pauseIcon, 5);
+        Canvas.SetRight(_pauseIcon, 5);
+        Children.Add(_pauseFrame);
+        Children.Add(_pauseIcon);
+    }
+
+    private void HidePauseOverlay()
+    {
+        if (_pauseFrame != null) Children.Remove(_pauseFrame);
+        if (_pauseIcon != null) Children.Remove(_pauseIcon);
+        _pauseFrame = null;
+        _pauseIcon = null;
     }
 
     private void Rebuild()
     {
         Children.Clear();
+        _pauseFrame = null;
+        _pauseIcon = null;
         _renderedNodes = 0;
 
         var width = ActualWidth;
         var height = ActualHeight;
         if (width < 20 || height < 20) return;
 
-        var root = Root;
+        var root = _currentTree;
         if (root == null || root.Children.Count == 0 || root.TotalSeconds <= 0)
         {
             ShowPlaceholder("No file scans recorded yet.\nScan something or open an .etl recording.");
@@ -124,6 +213,9 @@ public sealed class TreemapControl : Canvas
 
         if (ZoomedNode != null)
             AddBreadcrumbOverlay(ZoomedNode);
+
+        if (_isPaused)
+            ShowPauseOverlay();
     }
 
     private void RenderChildren(ScanTreeNode parent, Rect area, int depth, Color parentColor)
@@ -179,7 +271,7 @@ public sealed class TreemapControl : Canvas
     /// </summary>
     private List<Item> SelectVisibleItems(ScanTreeNode parent)
     {
-        var minWeight = (ZoomedNode ?? Root!).TotalSeconds * MinNodeFraction;
+        var minWeight = (ZoomedNode ?? _currentTree!).TotalSeconds * MinNodeFraction;
         var items = new List<Item>();
         double otherWeight = 0;
         var otherCount = 0;
@@ -250,6 +342,21 @@ public sealed class TreemapControl : Canvas
         border.Width = r.Width;
         border.Height = r.Height;
         border.ToolTip = BuildToolTip(item);
+
+        // Hover feedback: brighten the tile and thicken its frame.
+        var normalBackground = border.Background;
+        var normalThickness = border.BorderThickness;
+        var hoverBackground = Brighten((SolidColorBrush)normalBackground);
+        border.MouseEnter += (_, __) =>
+        {
+            border.Background = hoverBackground;
+            border.BorderThickness = new Thickness(2);
+        };
+        border.MouseLeave += (_, __) =>
+        {
+            border.Background = normalBackground;
+            border.BorderThickness = normalThickness;
+        };
 
         if (item.Node is { } node)
         {
@@ -433,7 +540,7 @@ public sealed class TreemapControl : Canvas
 
     private string BuildToolTip(Item item)
     {
-        var total = Root?.TotalSeconds ?? 0;
+        var total = _currentTree?.TotalSeconds ?? 0;
         var pct = total > 0 ? item.Weight / total * 100 : 0;
         if (item.Node is not { } node)
             return $"{item.OtherCount} smaller paths\n{item.Weight:F2}s ({pct:F1}%)";
@@ -540,6 +647,14 @@ public sealed class TreemapControl : Canvas
     }
 
     // --- Color helpers ---
+
+    // Lightens a brush's color while preserving its alpha (header tiles use translucent fills).
+    private static SolidColorBrush Brighten(SolidColorBrush brush)
+    {
+        var c = brush.Color;
+        var lighter = Lighten(c, 0.22);
+        return new SolidColorBrush(Color.FromArgb(c.A, lighter.R, lighter.G, lighter.B));
+    }
 
     private static double Luminance(Color c) => (0.299 * c.R + 0.587 * c.G + 0.114 * c.B) / 255.0;
 
