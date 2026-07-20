@@ -233,7 +233,7 @@ public sealed class TreemapControl : Canvas
 
     // --- Squarified treemap layout (Bruls, Huizing, van Wijk) ---
 
-    private static Rect[] Squarify(IReadOnlyList<double> weights, Rect bounds)
+    internal static Rect[] Squarify(IReadOnlyList<double> weights, Rect bounds)
     {
         var result = new Rect[weights.Count];
         double total = 0;
@@ -299,7 +299,7 @@ public sealed class TreemapControl : Canvas
         return result;
     }
 
-    private static double WorstRatio(double[] areas, int start, int end, double rowArea, double side)
+    internal static double WorstRatio(double[] areas, int start, int end, double rowArea, double side)
     {
         var thickness = rowArea / side;
         var worst = 0.0;

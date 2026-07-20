@@ -1,0 +1,47 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - name: Restore
+        run: dotnet restore src/WindowsDefenderPerformanceTool.slnx
+
+      - name: Build
+        run: dotnet build src/WindowsDefenderPerformanceTool.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test src/WindowsDefenderPerformanceTool.slnx --configuration Release --no-build
+
+      - name: Publish WindowsDefenderPerformanceTool
+        run: dotnet publish src/WindowsDefenderPerformanceTool/WindowsDefenderPerformanceTool.csproj -c Release --no-build
+
+      - name: Publish WindowsDefenderCpuTime
+        run: dotnet publish src/WindowsDefenderCpuTime/WindowsDefenderCpuTime.csproj -c Release --no-build
+
+      - name: Upload WindowsDefenderPerformanceTool artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WindowsDefenderPerformanceTool
+          path: src/WindowsDefenderPerformanceTool/bin/Release/net48/publish/
+
+      - name: Upload WindowsDefenderCpuTime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WindowsDefenderCpuTime
+          path: src/WindowsDefenderCpuTime/bin/Release/net48/publish/
