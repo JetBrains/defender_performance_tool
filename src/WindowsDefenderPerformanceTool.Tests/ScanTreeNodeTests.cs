@@ -71,7 +71,7 @@ public class ScanTreeNodeTests
         Assert.Equal(2, repo.Children.Count);
         Assert.Equal(1.5, repo.TotalSeconds, 1e-9);
 
-        var cObj = Assert.Single(repo.Children, n => n.Name == "obj\c.obj");
+        var cObj = Assert.Single(repo.Children, n => n.Name == @"obj\c.obj");
         Assert.Equal(0.5, cObj.TotalSeconds, 1e-9);
     }
 
