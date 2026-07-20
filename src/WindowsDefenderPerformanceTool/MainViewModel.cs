@@ -28,7 +28,7 @@ public class MainViewModel : ReactiveObject, IDisposable
     private const int TopN = 10;
 
     // Stats dictionary bounds: pruned to the largest entries when exceeded, so long
-    // sessions can't grow memory or RefreshTopLists() cost without limit.
+    // sessions can't grow memory or RefreshStats() cost without limit.
     private const int MaxTrackedEntries = 10_000;
     private const int PruneToEntries = 1_000;
 
@@ -147,7 +147,14 @@ public class MainViewModel : ReactiveObject, IDisposable
     public ImageSource? UacShieldIcon { get; } = LoadUacShieldIcon();
 
     public ObservableCollection<ScanStat> TopProcesses { get; } = new ObservableCollection<ScanStat>();
-    public ObservableCollection<ScanStat> TopFiles { get; } = new ObservableCollection<ScanStat>();
+
+    private ScanTreeNode? _filesTreeRoot;
+    /// <summary>Root of the scanned-files directory tree that feeds the treemap view.</summary>
+    public ScanTreeNode? FilesTreeRoot
+    {
+        get => _filesTreeRoot;
+        private set => this.RaiseAndSetIfChanged(ref _filesTreeRoot, value);
+    }
 
     // Exposes the ScottPlot control for the View
     public WpfPlot PlotControl => _plotter.WpfPlot;
@@ -165,7 +172,7 @@ public class MainViewModel : ReactiveObject, IDisposable
         _plotter = new Plotter(_eventsRelay.AsObservable());
 
         // Batch events into 250ms windows before dispatching to the UI thread.
-        // Without batching, RefreshTopLists() (O(n log n) sort + ObservableCollection rebuild)
+        // Without batching, RefreshStats() (O(n log n) sort + ObservableCollection rebuild + tree rebuild)
         // fires for every event, overwhelming the dispatcher queue under heavy scan load.
         _statsSubscription = _eventsRelay
             .Buffer(TimeSpan.FromMilliseconds(250))
@@ -240,7 +247,7 @@ public class MainViewModel : ReactiveObject, IDisposable
         PruneIfNeeded(_fileTotals);
 
         TotalScannedSeconds = _totalScannedMs / 1000.0;
-        RefreshTopLists();
+        RefreshStats();
     }
 
     private static void PruneIfNeeded(Dictionary<string, double> totals)
@@ -286,7 +293,7 @@ public class MainViewModel : ReactiveObject, IDisposable
         }
     }
 
-    private void RefreshTopLists()
+    private void RefreshStats()
     {
         SyncCollection(TopProcesses,
             _processTotals
@@ -294,11 +301,7 @@ public class MainViewModel : ReactiveObject, IDisposable
                 .Take(TopN)
                 .Select(kvp => new ScanStat(kvp.Key, kvp.Value / 1000.0)));
 
-        SyncCollection(TopFiles,
-            _fileTotals
-                .OrderByDescending(kvp => kvp.Value)
-                .Take(TopN)
-                .Select(kvp => new ScanStat(kvp.Key, kvp.Value / 1000.0)));
+        FilesTreeRoot = ScanTreeNode.Build(_fileTotals);
     }
 
     private static void SyncCollection(ObservableCollection<ScanStat> collection, IEnumerable<ScanStat> items)
@@ -316,7 +319,7 @@ public class MainViewModel : ReactiveObject, IDisposable
         TotalScannedSeconds = 0;
         TotalEventsProcessed = 0;
         TopProcesses.Clear();
-        TopFiles.Clear();
+        FilesTreeRoot = null;
         _plotter.Reset();
         _cpuKernelBaseline = null;
         _cpuUserBaseline = null;
@@ -335,8 +338,8 @@ public class MainViewModel : ReactiveObject, IDisposable
             sb.AppendLine($"  {stat.Name}: {stat.TotalSeconds:F2}s");
         sb.AppendLine();
         sb.AppendLine("Top Files:");
-        foreach (var stat in TopFiles)
-            sb.AppendLine($"  {stat.Name}: {stat.TotalSeconds:F2}s");
+        foreach (var kvp in _fileTotals.OrderByDescending(kvp => kvp.Value).Take(TopN))
+            sb.AppendLine($"  {kvp.Key}: {kvp.Value / 1000.0:F2}s");
         Clipboard.SetText(sb.ToString());
     }
 
@@ -347,7 +350,10 @@ public class MainViewModel : ReactiveObject, IDisposable
             generatedAt = DateTime.Now,
             totalScannedSeconds = TotalScannedSeconds,
             topProcesses = TopProcesses.Select(s => new { name = s.Name, totalSeconds = s.TotalSeconds }),
-            topFiles = TopFiles.Select(s => new { path = s.Name, totalSeconds = s.TotalSeconds })
+            topFiles = _fileTotals
+                .OrderByDescending(kvp => kvp.Value)
+                .Take(TopN)
+                .Select(kvp => new { path = kvp.Key, totalSeconds = kvp.Value / 1000.0 })
         };
         Clipboard.SetText(JsonConvert.SerializeObject(payload, Formatting.Indented));
     }
