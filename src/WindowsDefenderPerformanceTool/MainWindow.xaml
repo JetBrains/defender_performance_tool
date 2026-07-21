@@ -115,6 +115,19 @@
                           CanUserAddRows="False"
                           GridLinesVisibility="Horizontal"
                           HeadersVisibility="Column">
+                    <!-- Right-click a process row to exclude it from scanning -->
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow">
+                            <Setter Property="ContextMenu">
+                                <Setter.Value>
+                                    <ContextMenu>
+                                        <MenuItem Header="Add to Defender Exclusions…"
+                                                  Click="OnAddProcessExclusionClick"/>
+                                    </ContextMenu>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </DataGrid.RowStyle>
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Process" Binding="{Binding Name}" Width="*"/>
                         <DataGridTextColumn Header="Total Time"

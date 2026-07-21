@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using Microsoft.Win32;
 using ReactiveUI;
 
@@ -21,6 +22,13 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
         // Stop the ViewModel's timers when the window closes (idempotent — safe
         // alongside the main window's `using` in Program.cs).
         Closed += (_, __) => ViewModel?.Dispose();
+    }
+
+    // Context menu on the Top Processes grid — suggests excluding the process from scanning.
+    private void OnAddProcessExclusionClick(object sender, RoutedEventArgs e)
+    {
+        if (((MenuItem)sender).DataContext is ScanStat stat)
+            DefenderExclusions.AddProcessExclusion(stat.Name);
     }
 
     private static void OnDragOver(object sender, DragEventArgs e)

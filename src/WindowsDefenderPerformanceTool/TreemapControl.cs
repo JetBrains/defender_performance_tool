@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
-using System.Security.Principal;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -425,7 +423,7 @@ public sealed class TreemapControl : Canvas
         {
             Header = "Add to Defender Exclusion\u2026",
             Icon = new TextBlock { Text = "\U0001F6E1" },
-            Command = new RelayCommand(() => AddToDefenderExclusion(node)),
+            Command = new RelayCommand(() => DefenderExclusions.AddPathExclusion(node.FullPath)),
         });
 
         menu.Items.Add(new Separator());
@@ -468,61 +466,6 @@ public sealed class TreemapControl : Canvas
             MessageBox.Show(
                 $"Could not open Explorer for:\n{node.FullPath}\n\n{ex.Message}",
                 "Open in Explorer", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    private static void AddToDefenderExclusion(ScanTreeNode node)
-    {
-        var confirm = MessageBox.Show(
-            $"Add this path to the Windows Defender exclusion list?\n\n{node.FullPath}\n\n" +
-            "Files under an excluded path are no longer scanned.",
-            "Add Defender Exclusion", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        if (confirm != MessageBoxResult.Yes) return;
-
-        var escaped = node.FullPath.Replace("'", "''");
-        var arguments = $"-NoProfile -Command \"Add-MpPreference -ExclusionPath '{escaped}'\"";
-        var isAdmin = new WindowsPrincipal(WindowsIdentity.GetCurrent())
-            .IsInRole(WindowsBuiltInRole.Administrator);
-
-        try
-        {
-            var psi = new ProcessStartInfo("powershell.exe", arguments);
-            if (isAdmin)
-            {
-                psi.CreateNoWindow = true;
-                psi.WindowStyle = ProcessWindowStyle.Hidden;
-                using var process = Process.Start(psi);
-                process!.WaitForExit();
-                if (process.ExitCode == 0)
-                {
-                    MessageBox.Show($"Added to Defender exclusions:\n{node.FullPath}",
-                        "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-                else
-                {
-                    MessageBox.Show(
-                        $"Add-MpPreference failed (exit code {process.ExitCode}).\n" +
-                        "Try running the tool as administrator.",
-                        "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
-            else
-            {
-                // Not elevated — relaunch the command with a UAC prompt.
-                psi.Verb = "runas";
-                psi.UseShellExecute = true;
-                Process.Start(psi);
-            }
-        }
-        catch (Win32Exception)
-        {
-            // User cancelled the UAC prompt — nothing to do.
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(
-                $"Failed to add the exclusion:\n\n{ex.Message}",
-                "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
