@@ -37,7 +37,10 @@ public static class DefenderExclusions
     private static bool ConfirmExclusion(string kind, string target, string consequence)
     {
         var confirm = MessageBox.Show(
-            $"Add this {kind} to the Windows Defender exclusion list?\n\n{target}\n\n{consequence}",
+            $"Add this {kind} to the Windows Defender exclusion list?\n\n{target}\n\n{consequence}\n\n" +
+            "Before you define exclusions, review Exclusions in Microsoft Defender Antivirus page. " +
+            "Every exclusion is a protection gap that lowers your defenses, so use exclusions sparingly.\n" +
+            "https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-antivirus-exclusions-overview",
             "Add Defender Exclusion", MessageBoxButton.YesNo, MessageBoxImage.Warning);
         return confirm == MessageBoxResult.Yes;
     }
