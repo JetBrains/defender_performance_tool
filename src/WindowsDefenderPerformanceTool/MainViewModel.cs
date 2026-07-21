@@ -25,7 +25,7 @@ namespace WindowsDefenderPerformanceTool;
 
 public class MainViewModel : ReactiveObject, IDisposable
 {
-    private const int TopN = 10;
+    private const int TopN = 30;
 
     // Stats dictionary bounds: pruned to the largest entries when exceeded, so long
     // sessions can't grow memory or RefreshStats() cost without limit.
