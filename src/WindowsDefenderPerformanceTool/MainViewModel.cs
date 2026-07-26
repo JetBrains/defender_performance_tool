@@ -165,6 +165,27 @@ public class MainViewModel : ReactiveObject, IDisposable
 
     public ObservableCollection<ScanStat> TopProcesses { get; } = new ObservableCollection<ScanStat>();
 
+    // Pause-on-hover for the top-processes grid (same behavior as the treemap): while
+    // the view reports the mouse over the grid, list refreshes are deferred so the rows
+    // don't change under the cursor, and the latest refresh runs when it leaves.
+    private bool _topProcessesPaused;
+    private bool _topProcessesRefreshPending;
+
+    public bool TopProcessesPaused
+    {
+        get => _topProcessesPaused;
+        set
+        {
+            var wasPaused = _topProcessesPaused;
+            this.RaiseAndSetIfChanged(ref _topProcessesPaused, value);
+            if (wasPaused && !value && _topProcessesRefreshPending)
+            {
+                _topProcessesRefreshPending = false;
+                SyncTopProcesses();
+            }
+        }
+    }
+
     private ScanTreeNode? _filesTreeRoot;
     /// <summary>Root of the scanned-files directory tree that feeds the treemap view.</summary>
     public ScanTreeNode? FilesTreeRoot
@@ -367,14 +388,20 @@ public class MainViewModel : ReactiveObject, IDisposable
 
     private void RefreshStats()
     {
+        if (TopProcessesPaused)
+            _topProcessesRefreshPending = true;
+        else
+            SyncTopProcesses();
+
+        FilesTreeRoot = ScanTreeNode.Build(_fileTotals);
+    }
+
+    private void SyncTopProcesses() =>
         SyncCollection(TopProcesses,
             _processTotals
                 .OrderByDescending(kvp => kvp.Value)
                 .Take(TopN)
                 .Select(kvp => new ScanStat(kvp.Key, kvp.Value / 1000.0)));
-
-        FilesTreeRoot = ScanTreeNode.Build(_fileTotals);
-    }
 
     private static void SyncCollection(ObservableCollection<ScanStat> collection, IEnumerable<ScanStat> items)
     {
@@ -391,6 +418,7 @@ public class MainViewModel : ReactiveObject, IDisposable
         TotalScannedSeconds = 0;
         TotalEventsProcessed = 0;
         TopProcesses.Clear();
+        _topProcessesRefreshPending = false;
         FilesTreeRoot = null;
         _plotter.Reset();
         _cpuKernelBaseline = null;

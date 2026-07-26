@@ -18,6 +18,12 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
         DragOver += OnDragOver;
         Drop += OnDrop;
 
+        // Pause-on-hover for the top-processes grid — same behavior as the treemap:
+        // while the mouse is over the grid, row updates are deferred so the list
+        // doesn't change under the cursor, and an orange pause frame is shown.
+        var topProcessesPause = new HoverPause(TopProcessesGrid, TopProcessesPanel);
+        topProcessesPause.PauseChanged += paused => viewModel.TopProcessesPaused = paused;
+
         // Stop the ViewModel's timers when the window closes (idempotent — safe
         // alongside the main window's `using` in Program.cs).
         Closed += (_, __) => ViewModel?.Dispose();

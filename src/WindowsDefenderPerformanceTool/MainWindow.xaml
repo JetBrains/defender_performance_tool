@@ -140,6 +140,8 @@
             </Grid.ColumnDefinitions>
 
             <GroupBox Grid.Column="0" Header="Top Processes" Margin="4,0,2,4">
+                <!-- Wrapper hosts the pause-on-hover overlay (same indicator as the treemap) -->
+                <Grid x:Name="TopProcessesPanel">
                 <DataGrid x:Name="TopProcessesGrid"
                           ItemsSource="{Binding TopProcesses}"
                           AutoGenerateColumns="False"
@@ -168,6 +170,7 @@
                             Width="90"/>
                     </DataGrid.Columns>
                 </DataGrid>
+                </Grid>
             </GroupBox>
 
             <GroupBox Grid.Column="1" Header="Where Scans Happened" Margin="2,0,4,4">

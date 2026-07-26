@@ -68,18 +68,16 @@ public sealed class TreemapControl : Canvas
     // may be navigating a zoomed view, and swapping the tree would yank it away.
     private ScanTreeNode? _currentTree;
 
-    // Pause-on-hover state: while paused, Root changes only set _pendingDataChange and
-    // are applied (with zoom reset) when the mouse leaves.
-    private bool _isPaused;
-    private bool _pendingDataChange;
-    private Border? _pauseFrame;
-    private TextBlock? _pauseIcon;
+    // Pause-on-hover: while the mouse is over the control, Root changes are deferred
+    // (applied with zoom reset when the mouse leaves) and an orange pause frame is shown.
+    private readonly HoverPause _hoverPause;
 
     public TreemapControl()
     {
         // Transparent background so the whole area hit-tests and hover-pause also works
         // over the gaps between tiles (null background would let hits fall through).
         Background = Brushes.Transparent;
+        _hoverPause = new HoverPause(this, this);
     }
 
     // Zoom state: path from Root to the currently displayed node. Empty = full overview.
@@ -118,81 +116,19 @@ public sealed class TreemapControl : Canvas
 
     // New data invalidates any zoom — the zoomed node may no longer exist in the new tree.
     // While the mouse hovers the control the update is deferred until it leaves.
-    private void OnRootChanged()
+    private void OnRootChanged() => _hoverPause.ApplyOrDefer(ApplyRootChange);
+
+    private void ApplyRootChange()
     {
-        if (_isPaused)
-        {
-            _pendingDataChange = true;
-            return;
-        }
         _currentTree = Root;
         _zoomStack.Clear();
         Rebuild();
     }
 
-    protected override void OnMouseEnter(MouseEventArgs e)
-    {
-        base.OnMouseEnter(e);
-        _isPaused = true;
-        ShowPauseOverlay();
-    }
-
-    protected override void OnMouseLeave(MouseEventArgs e)
-    {
-        base.OnMouseLeave(e);
-        _isPaused = false;
-        HidePauseOverlay();
-        if (_pendingDataChange)
-        {
-            _pendingDataChange = false;
-            _currentTree = Root;
-            _zoomStack.Clear();
-            Rebuild();
-        }
-    }
-
-    private void ShowPauseOverlay()
-    {
-        if (_pauseFrame != null || ActualWidth < 20 || ActualHeight < 20) return;
-
-        _pauseFrame = new Border
-        {
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0x8C, 0x00)),
-            BorderThickness = new Thickness(3),
-            IsHitTestVisible = false,
-            Width = ActualWidth,
-            Height = ActualHeight,
-        };
-        _pauseIcon = new TextBlock
-        {
-            Text = "\u23F8", // ⏸
-            FontSize = 26,
-            Foreground = Brushes.White,
-            Background = _pauseFrame.BorderBrush,
-            Padding = new Thickness(8, 4, 8, 4),
-            IsHitTestVisible = false,
-        };
-        Canvas.SetLeft(_pauseFrame, 0);
-        Canvas.SetTop(_pauseFrame, 0);
-        Canvas.SetTop(_pauseIcon, 5);
-        Canvas.SetRight(_pauseIcon, 5);
-        Children.Add(_pauseFrame);
-        Children.Add(_pauseIcon);
-    }
-
-    private void HidePauseOverlay()
-    {
-        if (_pauseFrame != null) Children.Remove(_pauseFrame);
-        if (_pauseIcon != null) Children.Remove(_pauseIcon);
-        _pauseFrame = null;
-        _pauseIcon = null;
-    }
-
     private void Rebuild()
     {
         Children.Clear();
-        _pauseFrame = null;
-        _pauseIcon = null;
+        _hoverPause.RefreshOverlay();
         _renderedNodes = 0;
 
         var width = ActualWidth;
@@ -211,9 +147,6 @@ public sealed class TreemapControl : Canvas
 
         if (ZoomedNode != null)
             AddBreadcrumbOverlay(ZoomedNode);
-
-        if (_isPaused)
-            ShowPauseOverlay();
     }
 
     private void RenderChildren(ScanTreeNode parent, Rect area, int depth, Color parentColor)
