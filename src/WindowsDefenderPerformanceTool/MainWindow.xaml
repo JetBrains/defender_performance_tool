@@ -31,6 +31,7 @@
             <DockPanel Margin="12,4,8,4">
                 <!-- Restart button: only shown when not running as admin -->
                 <Button DockPanel.Dock="Right"
+                        AutomationProperties.AutomationId="RestartAsAdminButton"
                         Command="{Binding RestartAsAdminCommand}"
                         Padding="10,4"
                         VerticalAlignment="Center">
@@ -50,6 +51,36 @@
                                VerticalAlignment="Center"/>
                         <TextBlock Text="Restart to enable live monitoring"
                                    Margin="6,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <!-- Exclusion manager: shield icon + total exclusions count, click to manage.
+                     Only useful (and only shown) when elevated: Defender hides exclusions
+                     from non-administrators. -->
+                <Button DockPanel.Dock="Right"
+                        AutomationProperties.AutomationId="ExclusionsButton"
+                        Command="{Binding OpenExclusionManagerCommand}"
+                        Padding="8,4"
+                        Margin="0,0,8,0"
+                        VerticalAlignment="Center"
+                        ToolTip="{Binding ExclusionTooltip, Mode=OneWay}">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsNotRunningAsAdmin}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <StackPanel Orientation="Horizontal">
+                        <Image Source="{Binding UacShieldIcon}" Width="16" Height="16"
+                               RenderOptions.BitmapScalingMode="HighQuality"
+                               VerticalAlignment="Center"/>
+                        <TextBlock Margin="6,0,0,0" VerticalAlignment="Center">
+                            <Run Text="Exclusions: "/>
+                            <Run Text="{Binding ExclusionCountText, Mode=OneWay}" FontWeight="SemiBold"/>
+                        </TextBlock>
                     </StackPanel>
                 </Button>
 

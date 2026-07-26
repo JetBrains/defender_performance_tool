@@ -7,8 +7,9 @@ using System.Windows;
 namespace WindowsDefenderPerformanceTool;
 
 /// <summary>
-/// Adds Windows Defender exclusions via Add-MpPreference. Shared by the top-processes
+/// Adds Windows Defender exclusions, with confirmation. Shared by the top-processes
 /// grid (process exclusions) and the scan-time treemap (path exclusions).
+/// Delegates to <see cref="DefenderExclusionManager"/> (a C# port of Add-MpPreference).
 /// </summary>
 public static class DefenderExclusions
 {
@@ -19,8 +20,7 @@ public static class DefenderExclusions
                 "Files touched by an excluded process are no longer scanned."))
             return;
 
-        var escaped = processName.Replace("'", "''");
-        RunAddMpPreference($"-ExclusionProcess '{escaped}'", processName);
+        AddExclusion(ExclusionKind.Process, processName);
     }
 
     /// <summary>Excludes a file or directory path from scanning, after confirmation.</summary>
@@ -30,8 +30,7 @@ public static class DefenderExclusions
                 "Files under an excluded path are no longer scanned."))
             return;
 
-        var escaped = path.Replace("'", "''");
-        RunAddMpPreference($"-ExclusionPath '{escaped}'", path);
+        AddExclusion(ExclusionKind.Path, path);
     }
 
     private static bool ConfirmExclusion(string kind, string target, string consequence)
@@ -45,41 +44,46 @@ public static class DefenderExclusions
         return confirm == MessageBoxResult.Yes;
     }
 
-    private static void RunAddMpPreference(string preferenceArgument, string target)
+    private static void AddExclusion(ExclusionKind kind, string target)
     {
-        var arguments = $"-NoProfile -Command \"Add-MpPreference {preferenceArgument}\"";
         var isAdmin = new WindowsPrincipal(WindowsIdentity.GetCurrent())
             .IsInRole(WindowsBuiltInRole.Administrator);
 
+        if (isAdmin)
+        {
+            try
+            {
+                DefenderExclusionManager.AddExclusion(kind, target);
+                MessageBox.Show($"Added to Defender exclusions:\n{target}",
+                    "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Failed to add the exclusion:\n\n{ex.Message}",
+                    "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        else
+        {
+            // Not elevated — the WMI provider would refuse the change, so relaunch the
+            // equivalent PowerShell cmdlet with a UAC prompt instead.
+            RunAddMpPreferenceElevated(kind, target);
+        }
+    }
+
+    private static void RunAddMpPreferenceElevated(ExclusionKind kind, string target)
+    {
+        var escaped = target.Replace("'", "''");
+        var arguments = $"-NoProfile -Command \"Add-MpPreference -{DefenderExclusionManager.PropertyName(kind)} '{escaped}'\"";
+
         try
         {
-            var psi = new ProcessStartInfo("powershell.exe", arguments);
-            if (isAdmin)
+            Process.Start(new ProcessStartInfo("powershell.exe", arguments)
             {
-                psi.CreateNoWindow = true;
-                psi.WindowStyle = ProcessWindowStyle.Hidden;
-                using var process = Process.Start(psi);
-                process!.WaitForExit();
-                if (process.ExitCode == 0)
-                {
-                    MessageBox.Show($"Added to Defender exclusions:\n{target}",
-                        "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-                else
-                {
-                    MessageBox.Show(
-                        $"Add-MpPreference failed (exit code {process.ExitCode}).\n" +
-                        "Try running the tool as administrator.",
-                        "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
-            else
-            {
-                // Not elevated — relaunch the command with a UAC prompt.
-                psi.Verb = "runas";
-                psi.UseShellExecute = true;
-                Process.Start(psi);
-            }
+                Verb = "runas",
+                UseShellExecute = true
+            });
         }
         catch (Win32Exception)
         {

@@ -10,6 +10,7 @@ using System.Reactive.Subjects;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -46,6 +47,8 @@ public class MainViewModel : ReactiveObject, IDisposable
     private IDisposable? _statsSubscription;
     private EtwListener? _fileListener;
     private readonly DispatcherTimer _cpuTimer;
+    private readonly DispatcherTimer _exclusionTimer;
+    private bool _exclusionQueryRunning;
     private TimeSpan? _cpuKernelBaseline;
     private TimeSpan? _cpuUserBaseline;
 
@@ -111,6 +114,20 @@ public class MainViewModel : ReactiveObject, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _cpuStatusTooltip, value);
     }
 
+    private string _exclusionCountText = "…";
+    public string ExclusionCountText
+    {
+        get => _exclusionCountText;
+        private set => this.RaiseAndSetIfChanged(ref _exclusionCountText, value);
+    }
+
+    private string _exclusionTooltip = "";
+    public string ExclusionTooltip
+    {
+        get => _exclusionTooltip;
+        private set => this.RaiseAndSetIfChanged(ref _exclusionTooltip, value);
+    }
+
     private bool _isRecording;
     public bool IsRecording
     {
@@ -167,6 +184,7 @@ public class MainViewModel : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> OpenEtlFileCommand { get; }
     public ReactiveCommand<Unit, Unit> RestartAsAdminCommand { get; }
     public ReactiveCommand<string, Unit> AddProcessExclusionCommand { get; }
+    public ReactiveCommand<Unit, Unit> OpenExclusionManagerCommand { get; }
 
     public MainViewModel(bool startLiveMonitoring = true)
     {
@@ -220,11 +238,59 @@ public class MainViewModel : ReactiveObject, IDisposable
         RestartAsAdminCommand = ReactiveCommand.Create(RestartAsAdmin);
         AddProcessExclusionCommand = ReactiveCommand.Create<string>(processName =>
             DefenderExclusions.AddProcessExclusion(processName));
+        OpenExclusionManagerCommand = ReactiveCommand.Create(OpenExclusionManager);
 
         _cpuTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _cpuTimer.Tick += (_, __) => PollCpuTimes();
         _cpuTimer.Start();
         PollCpuTimes();
+
+        _exclusionTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _exclusionTimer.Tick += (_, __) => RefreshExclusionCountAsync();
+        _exclusionTimer.Start();
+        RefreshExclusionCountAsync();
+    }
+
+    private void OpenExclusionManager()
+    {
+        var vm = new ExclusionManagerViewModel();
+        var window = new ExclusionManagerWindow(vm) { Owner = Application.Current.MainWindow };
+        window.ShowDialog();
+        RefreshExclusionCountAsync();
+    }
+
+    private async void RefreshExclusionCountAsync()
+    {
+        if (_exclusionQueryRunning) return; // skip overlapping polls
+
+        if (!IsRunningAsAdmin)
+        {
+            ExclusionCountText = "?";
+            ExclusionTooltip =
+                "Windows Defender exclusions (paths, processes, extensions, IP addresses).\n" +
+                "Defender hides them from non-administrators — restart the tool as administrator to view and manage.";
+            return;
+        }
+
+        _exclusionQueryRunning = true;
+        try
+        {
+            var snapshot = await Task.Run(DefenderExclusionManager.GetExclusions);
+            ExclusionCountText = snapshot.TotalCount.ToString();
+            ExclusionTooltip =
+                $"Windows Defender exclusions: {snapshot.Paths.Count} paths, " +
+                $"{snapshot.Processes.Count} processes, {snapshot.Extensions.Count} extensions, " +
+                $"{snapshot.IpAddresses.Count} IP addresses.\nClick to open the exclusion manager.";
+        }
+        catch (Exception ex)
+        {
+            ExclusionCountText = "!";
+            ExclusionTooltip = $"Unable to query Defender exclusions:\n{ex.Message}";
+        }
+        finally
+        {
+            _exclusionQueryRunning = false;
+        }
     }
 
     private void OnEventBatch(IList<EventInfo> batch)
@@ -476,6 +542,7 @@ public class MainViewModel : ReactiveObject, IDisposable
         _disposed = true;
 
         _cpuTimer.Stop();
+        _exclusionTimer.Stop();
         _statsSubscription?.Dispose();
         _liveSubscription?.Dispose();
         _liveRawSubscription?.Dispose();
