@@ -63,15 +63,40 @@ public sealed class ScanTreeNode
 
     private static ScanTreeNode ToNode(Builder builder, bool compress)
     {
-        if (compress)
+        if (compress && builder.Children.Count == 1)
         {
-            // Merge single-child chains: "work" -> "repository" becomes "work\repository".
-            while (builder.Children.Count == 1)
+            // Follow the single-child chain and collect the segments.
+            var chain = new List<string>();
+            var current = builder;
+            while (current.Children.Count == 1)
             {
-                var only = builder.Children.Values.First();
-                builder.Name += "\\" + only.Name;
-                builder.FullPath = only.FullPath;
-                builder.Children = only.Children;
+                current = current.Children.Values.First();
+                chain.Add(current.Name);
+            }
+
+            if (current.Children.Count == 0)
+            {
+                // The chain ends at a file leaf, so collapse the whole chain
+                // (including the top-level segment) into one node.
+                builder.Name = builder.Name + (chain.Count > 0 ? "\\" + string.Join("\\", chain) : "");
+                builder.FullPath = current.FullPath;
+                builder.Children = current.Children;
+            }
+            else
+            {
+                // The chain ends at a branching directory. Keep the top-level
+                // segment visible and collapse the intermediate directories into
+                // a single child node (e.g. C: -> work\repository).
+                var compressedName = string.Join("\\", chain);
+                var compressed = new Builder(compressedName, current.FullPath)
+                {
+                    TotalMs = current.TotalMs,
+                    Children = current.Children
+                };
+                builder.Children = new Dictionary<string, Builder>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { compressedName, compressed }
+                };
             }
         }
 

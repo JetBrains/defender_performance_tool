@@ -166,6 +166,7 @@ public class MainViewModel : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> StopRecordingCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenEtlFileCommand { get; }
     public ReactiveCommand<Unit, Unit> RestartAsAdminCommand { get; }
+    public ReactiveCommand<string, Unit> AddProcessExclusionCommand { get; }
 
     public MainViewModel(bool startLiveMonitoring = true)
     {
@@ -217,6 +218,8 @@ public class MainViewModel : ReactiveObject, IDisposable
         StopRecordingCommand = ReactiveCommand.Create(StopRecording, canStop);
         OpenEtlFileCommand = ReactiveCommand.Create(OpenEtlFile);
         RestartAsAdminCommand = ReactiveCommand.Create(RestartAsAdmin);
+        AddProcessExclusionCommand = ReactiveCommand.Create<string>(processName =>
+            DefenderExclusions.AddProcessExclusion(processName));
 
         _cpuTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _cpuTimer.Tick += (_, __) => PollCpuTimes();

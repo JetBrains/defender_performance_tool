@@ -166,10 +166,10 @@ public sealed class TreemapControl : Canvas
         _pauseIcon = new TextBlock
         {
             Text = "\u23F8", // ⏸
-            FontSize = 13,
+            FontSize = 26,
             Foreground = Brushes.White,
             Background = _pauseFrame.BorderBrush,
-            Padding = new Thickness(5, 2, 5, 2),
+            Padding = new Thickness(8, 4, 8, 4),
             IsHitTestVisible = false,
         };
         Canvas.SetLeft(_pauseFrame, 0);

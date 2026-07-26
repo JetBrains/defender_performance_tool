@@ -59,7 +59,7 @@ public class ScanTreeNodeTests
     {
         var totals = new Dictionary<string, double>
         {
-            [@"\??\C:\work\repository\c.obj"] = 500,
+            [@"\??\C:\work\repository\obj\c.obj"] = 500,
             [@"C:\work\repository\a.cs"] = 1000,
         };
 

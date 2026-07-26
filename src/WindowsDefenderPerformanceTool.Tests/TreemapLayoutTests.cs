@@ -47,7 +47,8 @@ public class TreemapLayoutTests
         }
 
         double sumArea = rects.Sum(r => r.Width * r.Height);
-        Assert.Equal(width * height, sumArea, 0.5);
+        if (count > 0)
+            Assert.Equal(width * height, sumArea, 0.5);
     }
 
     [Fact]

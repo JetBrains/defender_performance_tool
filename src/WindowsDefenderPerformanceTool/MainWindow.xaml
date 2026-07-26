@@ -109,7 +109,8 @@
             </Grid.ColumnDefinitions>
 
             <GroupBox Grid.Column="0" Header="Top Processes" Margin="4,0,2,4">
-                <DataGrid ItemsSource="{Binding TopProcesses}"
+                <DataGrid x:Name="TopProcessesGrid"
+                          ItemsSource="{Binding TopProcesses}"
                           AutoGenerateColumns="False"
                           IsReadOnly="True"
                           CanUserAddRows="False"
@@ -122,7 +123,8 @@
                                 <Setter.Value>
                                     <ContextMenu>
                                         <MenuItem Header="Add to Defender Exclusions…"
-                                                  Click="OnAddProcessExclusionClick"/>
+                                                  Command="{Binding ElementName=TopProcessesGrid, Path=DataContext.AddProcessExclusionCommand}"
+                                                  CommandParameter="{Binding Name}"/>
                                     </ContextMenu>
                                 </Setter.Value>
                             </Setter>
