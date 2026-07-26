@@ -1,55 +1,55 @@
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Security.Principal;
 using System.Windows;
 
 namespace WindowsDefenderPerformanceTool;
 
 /// <summary>
-/// Adds Windows Defender exclusions, with confirmation. Shared by the top-processes
-/// grid (process exclusions) and the scan-time treemap (path exclusions).
-/// Delegates to <see cref="DefenderExclusionManager"/> (a C# port of Add-MpPreference).
+/// UI helpers for adding Windows Defender exclusions, with confirmation. Shared by the
+/// top-processes grid (process exclusions), the scan-time treemap (path exclusions) and
+/// the exclusion manager dialog. Delegates to <see cref="DefenderExclusionManager"/>
+/// (a C# port of Add-MpPreference).
 /// </summary>
 public static class DefenderExclusions
 {
     /// <summary>Excludes a process (image name or full path) from scanning, after confirmation.</summary>
-    public static void AddProcessExclusion(string processName)
-    {
-        if (!ConfirmExclusion("process", processName,
-                "Files touched by an excluded process are no longer scanned."))
-            return;
-
-        AddExclusion(ExclusionKind.Process, processName);
-    }
+    public static void AddProcessExclusion(string processName) =>
+        AddWithConfirmation(ExclusionKind.Process, "process", processName,
+            "Files touched by an excluded process are no longer scanned.");
 
     /// <summary>Excludes a file or directory path from scanning, after confirmation.</summary>
-    public static void AddPathExclusion(string path)
+    public static void AddPathExclusion(string path) =>
+        AddWithConfirmation(ExclusionKind.Path, "path", path,
+            "Files under an excluded path are no longer scanned.");
+
+    private static void AddWithConfirmation(ExclusionKind kind, string kindLabel, string target, string consequence)
     {
-        if (!ConfirmExclusion("path", path,
-                "Files under an excluded path are no longer scanned."))
+        if (!ConfirmExclusion(kindLabel, target, consequence))
             return;
 
-        AddExclusion(ExclusionKind.Path, path);
+        AddExclusion(kind, target);
     }
 
-    private static bool ConfirmExclusion(string kind, string target, string consequence)
+    /// <summary>Asks the user to confirm adding an exclusion; returns true when confirmed.</summary>
+    public static bool ConfirmExclusion(string kindLabel, string target, string? consequence = null)
     {
-        var confirm = MessageBox.Show(
-            $"Add this {kind} to the Windows Defender exclusion list?\n\n{target}\n\n{consequence}\n\n" +
+        var message = $"Add this {kindLabel} to the Windows Defender exclusion list?\n\n{target}\n\n";
+        if (!string.IsNullOrEmpty(consequence))
+            message += consequence + "\n\n";
+        message +=
             "Before you define exclusions, review Exclusions in Microsoft Defender Antivirus page. " +
             "Every exclusion is a protection gap that lowers your defenses, so use exclusions sparingly.\n" +
-            "https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-antivirus-exclusions-overview",
+            "https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-antivirus-exclusions-overview";
+
+        var confirm = MessageBox.Show(message,
             "Add Defender Exclusion", MessageBoxButton.YesNo, MessageBoxImage.Warning);
         return confirm == MessageBoxResult.Yes;
     }
 
     private static void AddExclusion(ExclusionKind kind, string target)
     {
-        var isAdmin = new WindowsPrincipal(WindowsIdentity.GetCurrent())
-            .IsInRole(WindowsBuiltInRole.Administrator);
-
-        if (isAdmin)
+        if (DefenderExclusionManager.IsRunningAsAdmin)
         {
             try
             {
@@ -59,9 +59,7 @@ public static class DefenderExclusions
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    $"Failed to add the exclusion:\n\n{ex.Message}",
-                    "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowAddError(ex);
             }
         }
         else
@@ -74,12 +72,10 @@ public static class DefenderExclusions
 
     private static void RunAddMpPreferenceElevated(ExclusionKind kind, string target)
     {
-        var escaped = target.Replace("'", "''");
-        var arguments = $"-NoProfile -Command \"Add-MpPreference -{DefenderExclusionManager.PropertyName(kind)} '{escaped}'\"";
-
         try
         {
-            Process.Start(new ProcessStartInfo("powershell.exe", arguments)
+            Process.Start(new ProcessStartInfo("powershell.exe",
+                    DefenderExclusionManager.BuildPowerShellArguments("Add-MpPreference", kind, target))
             {
                 Verb = "runas",
                 UseShellExecute = true
@@ -91,9 +87,11 @@ public static class DefenderExclusions
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                $"Failed to add the exclusion:\n\n{ex.Message}",
-                "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowAddError(ex);
         }
     }
+
+    private static void ShowAddError(Exception ex) =>
+        MessageBox.Show($"Failed to add the exclusion:\n\n{ex.Message}",
+            "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Error);
 }

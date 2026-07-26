@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Management;
+using System.Security.Principal;
 
 namespace WindowsDefenderPerformanceTool;
 
@@ -60,6 +61,10 @@ public static class DefenderExclusionManager
     private const string WmiClass = "MSFT_MpPreference";
     private const string HiddenSentinel = "N/A:"; // "N/A: Must be an administrator to view exclusions"
 
+    /// <summary>True when the current process runs elevated (required to read/modify exclusions).</summary>
+    public static bool IsRunningAsAdmin { get; } =
+        new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
+
     /// <summary>Maps a kind to the MSFT_MpPreference property / Add-Remove parameter name.</summary>
     public static string PropertyName(ExclusionKind kind) => kind switch
     {
@@ -69,6 +74,13 @@ public static class DefenderExclusionManager
         ExclusionKind.IpAddress => "ExclusionIpAddress",
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
+
+    /// <summary>Builds the powershell.exe argument list that runs the given Defender cmdlet.</summary>
+    public static string BuildPowerShellArguments(string cmdlet, ExclusionKind kind, string value)
+    {
+        var escaped = value.Replace("'", "''");
+        return $"-NoProfile -Command \"{cmdlet} -{PropertyName(kind)} '{escaped}'\"";
+    }
 
     /// <summary>Reads all four exclusion lists. Throws when the Defender provider is unavailable.</summary>
     public static ExclusionSnapshot GetExclusions()
@@ -153,9 +165,7 @@ public static class DefenderExclusionManager
 
     private static void RunPowerShell(string cmdlet, ExclusionKind kind, string value, Exception wmiError)
     {
-        var escaped = value.Replace("'", "''");
-        var arguments = $"-NoProfile -Command \"{cmdlet} -{PropertyName(kind)} '{escaped}'\"";
-        var psi = new ProcessStartInfo("powershell.exe", arguments)
+        var psi = new ProcessStartInfo("powershell.exe", BuildPowerShellArguments(cmdlet, kind, value))
         {
             CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden,

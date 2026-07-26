@@ -5,7 +5,6 @@ using System.Linq;
 using System.Net;
 using System.Reactive;
 using System.Reactive.Linq;
-using System.Security.Principal;
 using System.Threading.Tasks;
 using System.Windows;
 using ReactiveUI;
@@ -63,11 +62,8 @@ public sealed class ExclusionKindViewModel : ReactiveObject
     {
         var value = ValidateAndNormalize(NewValue); // throws on invalid input
 
-        var confirm = MessageBox.Show(
-            $"Add this {Title.TrimEnd('s').ToLowerInvariant()} to the Windows Defender exclusion list?\n\n{value}\n\n" +
-            "Every exclusion is a protection gap that lowers your defenses, so use exclusions sparingly.",
-            "Add Defender Exclusion", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        if (confirm != MessageBoxResult.Yes) return;
+        if (!DefenderExclusions.ConfirmExclusion(Title.TrimEnd('s').ToLowerInvariant(), value))
+            return;
 
         await Task.Run(() => DefenderExclusionManager.AddExclusion(Kind, value));
         NewValue = "";
@@ -114,8 +110,7 @@ public sealed class ExclusionManagerViewModel : ReactiveObject
     public ExclusionKindViewModel IpAddresses { get; }
     public IReadOnlyList<ExclusionKindViewModel> Kinds { get; }
 
-    public bool IsRunningAsAdmin { get; } =
-        new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
+    public bool IsRunningAsAdmin { get; } = DefenderExclusionManager.IsRunningAsAdmin;
 
     private int _totalCount;
     public int TotalCount
