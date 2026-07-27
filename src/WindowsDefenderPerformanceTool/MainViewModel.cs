@@ -37,7 +37,6 @@ public class MainViewModel : ReactiveObject, IDisposable
     private readonly Subject<EventInfo> _eventsRelay = new();
 
     private readonly Plotter _plotter;
-    private readonly EtwRecorder _recorder = new();
     private EtwListener? _liveListener;
 
     private IDisposable? _liveSubscription;
@@ -128,20 +127,6 @@ public class MainViewModel : ReactiveObject, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _exclusionTooltip, value);
     }
 
-    private bool _isRecording;
-    public bool IsRecording
-    {
-        get => _isRecording;
-        private set => this.RaiseAndSetIfChanged(ref _isRecording, value);
-    }
-
-    private string _recordingName = "";
-    public string RecordingName
-    {
-        get => _recordingName;
-        set => this.RaiseAndSetIfChanged(ref _recordingName, value);
-    }
-
     private string _snapshotName = "";
     public string SnapshotName
     {
@@ -200,8 +185,6 @@ public class MainViewModel : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> CopyHumanReadableCommand { get; }
     public ReactiveCommand<Unit, Unit> CopyJsonCommand { get; }
     public ReactiveCommand<Unit, Unit> ResetCommand { get; }
-    public ReactiveCommand<Unit, Unit> StartRecordingCommand { get; }
-    public ReactiveCommand<Unit, Unit> StopRecordingCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenEtlFileCommand { get; }
     public ReactiveCommand<Unit, Unit> RestartAsAdminCommand { get; }
     public ReactiveCommand<string, Unit> AddProcessExclusionCommand { get; }
@@ -243,18 +226,9 @@ public class MainViewModel : ReactiveObject, IDisposable
             _liveListener.Start();
         }
 
-        var canStart = this.WhenAnyValue(
-            x => x.IsRecording,
-            x => x.RecordingName,
-            (rec, name) => !rec && !string.IsNullOrWhiteSpace(name));
-
-        var canStop = this.WhenAnyValue(x => x.IsRecording);
-
         CopyHumanReadableCommand = ReactiveCommand.Create(CopyHumanReadable);
         CopyJsonCommand = ReactiveCommand.Create(CopyJson);
         ResetCommand = ReactiveCommand.Create(Reset);
-        StartRecordingCommand = ReactiveCommand.Create(StartRecording, canStart);
-        StopRecordingCommand = ReactiveCommand.Create(StopRecording, canStop);
         OpenEtlFileCommand = ReactiveCommand.Create(OpenEtlFile);
         RestartAsAdminCommand = ReactiveCommand.Create(RestartAsAdmin);
         AddProcessExclusionCommand = ReactiveCommand.Create<string>(processName =>
@@ -458,20 +432,6 @@ public class MainViewModel : ReactiveObject, IDisposable
         Clipboard.SetText(JsonConvert.SerializeObject(payload, Formatting.Indented));
     }
 
-    private void StartRecording()
-    {
-        var dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Recordings");
-        var filePath = Path.Combine(dir, RecordingName.Trim() + ".etl");
-        _recorder.Start(filePath);
-        IsRecording = true;
-    }
-
-    private void StopRecording()
-    {
-        _recorder.Stop();
-        IsRecording = false;
-    }
-
     private void OpenEtlFile()
     {
         var dialog = new OpenFileDialog
@@ -578,7 +538,6 @@ public class MainViewModel : ReactiveObject, IDisposable
         _fileRawSubscription?.Dispose();
         _liveListener?.Dispose();
         _fileListener?.Dispose();
-        _recorder.Dispose();
         _plotter.Dispose();
         _eventsRelay.OnCompleted();
         _eventsRelay.Dispose();

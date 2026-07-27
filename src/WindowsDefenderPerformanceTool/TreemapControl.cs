@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -354,6 +355,13 @@ public sealed class TreemapControl : Canvas
 
         menu.Items.Add(new MenuItem
         {
+            Header = "Copy All Details",
+            Icon = new TextBlock { Text = "\U0001F4CA" },
+            Command = new RelayCommand(() => CopyAllDetails(node)),
+        });
+
+        menu.Items.Add(new MenuItem
+        {
             Header = "Add to Defender Exclusion\u2026",
             Icon = new TextBlock { Text = "\U0001F6E1" },
             Command = new RelayCommand(() => DefenderExclusions.AddPathExclusion(node.FullPath)),
@@ -377,6 +385,30 @@ public sealed class TreemapControl : Canvas
         });
 
         return menu;
+    }
+
+    // Copies the node's complete subtree to the clipboard — every descendant, not just
+    // the children that survived the treemap's "Other" folding, so nothing stays hidden.
+    private void CopyAllDetails(ScanTreeNode node)
+    {
+        var total = _currentTree?.TotalSeconds ?? 0;
+        var pct = total > 0 ? node.TotalSeconds / total * 100 : 0;
+
+        var sb = new StringBuilder();
+        sb.Append(node.FullPath);
+        sb.AppendLine($": {node.TotalSeconds:F2}s ({pct:F1}% of all scanned time)");
+        AppendChildren(sb, node, indent: 1);
+        Clipboard.SetText(sb.ToString());
+    }
+
+    private static void AppendChildren(StringBuilder sb, ScanTreeNode node, int indent)
+    {
+        foreach (var child in node.Children)
+        {
+            sb.Append(' ', indent * 2);
+            sb.Append(child.Name).Append($": {child.TotalSeconds:F2}s").AppendLine();
+            AppendChildren(sb, child, indent + 1);
+        }
     }
 
     private static void OpenInExplorer(ScanTreeNode node)

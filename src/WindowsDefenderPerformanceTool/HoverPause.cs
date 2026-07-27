@@ -75,18 +75,18 @@ public sealed class HoverPause
         _overlay = new Border
         {
             BorderBrush = IndicatorBrush,
-            BorderThickness = new Thickness(3),
+            BorderThickness = new Thickness(2),
             IsHitTestVisible = false,
             Child = new TextBlock
             {
                 Text = "\u23F8", // ⏸
-                FontSize = 26,
+                FontSize = 20,
                 Foreground = Brushes.White,
                 Background = IndicatorBrush,
-                Padding = new Thickness(8, 4, 8, 4),
+                Padding = new Thickness(6, 3, 6, 3),
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(5),
+                Margin = new Thickness(4),
                 IsHitTestVisible = false,
             },
         };

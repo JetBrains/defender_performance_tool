@@ -16,11 +16,10 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="220"/>   <!-- Row 0: Plot -->
+            <RowDefinition Height="150"/>   <!-- Row 0: Plot -->
             <RowDefinition Height="Auto"/>  <!-- Row 1: Aggregate stats -->
             <RowDefinition Height="*"/>     <!-- Row 2: Top grids -->
             <RowDefinition Height="Auto"/>  <!-- Row 3: Action buttons -->
-            <RowDefinition Height="Auto"/>  <!-- Row 4: ETL Recording -->
         </Grid.RowDefinitions>
 
         <!-- Row 0: Scan duration plot -->
@@ -157,7 +156,11 @@
                                     <ContextMenu>
                                         <MenuItem Header="Add to Defender Exclusions…"
                                                   Command="{Binding ElementName=TopProcessesGrid, Path=DataContext.AddProcessExclusionCommand}"
-                                                  CommandParameter="{Binding Name}"/>
+                                                  CommandParameter="{Binding Name}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="&#x1F6E1;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
                                     </ContextMenu>
                                 </Setter.Value>
                             </Setter>
@@ -186,61 +189,14 @@
             <Button Command="{Binding CopyJsonCommand}" Padding="14,6" Margin="0,0,8,0">
                 Copy JSON
             </Button>
-            <Button Command="{Binding ResetCommand}" Padding="14,6">
+            <Button Command="{Binding ResetCommand}" Padding="14,6" Margin="0,0,8,0">
                 Reset
             </Button>
+            <Button Command="{Binding OpenEtlFileCommand}" Padding="14,6"
+                    ToolTip="Opens an .etl recording and replays events. Current stats are reset.
+ETL files can also be dropped onto the window.">
+                Open ETL Recording…
+            </Button>
         </StackPanel>
-
-        <!-- Row 4: ETL Recording (collapsible) -->
-        <Expander Grid.Row="4" Header="ETL Recording" Margin="8,0,8,8">
-            <Grid Margin="8,8,8,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-
-                <!-- Left: Start / Stop recording -->
-                <GroupBox Grid.Column="0" Header="Record Session" Margin="0,0,4,0">
-                    <StackPanel Margin="8">
-                        <TextBlock Text="Recording name" Margin="0,0,0,2"/>
-                        <TextBox Text="{Binding RecordingName, UpdateSourceTrigger=PropertyChanged}"
-                                 Margin="0,0,0,8"/>
-                        <StackPanel Orientation="Horizontal">
-                            <Button Command="{Binding StartRecordingCommand}" Padding="14,6" Margin="0,0,8,0">
-                                Start
-                            </Button>
-                            <Button Command="{Binding StopRecordingCommand}" Padding="14,6">
-                                Stop
-                            </Button>
-                        </StackPanel>
-                        <TextBlock Foreground="Red" Margin="0,8,0,0" FontWeight="SemiBold">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsRecording}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                            ● Recording in progress…
-                        </TextBlock>
-                    </StackPanel>
-                </GroupBox>
-
-                <!-- Right: Open saved recording -->
-                <GroupBox Grid.Column="1" Header="Open Recording" Margin="4,0,0,0">
-                    <StackPanel Margin="8" VerticalAlignment="Center">
-                        <Button Command="{Binding OpenEtlFileCommand}" Padding="14,6">
-                            Open Saved Recording…
-                        </Button>
-                        <TextBlock Margin="0,8,0,0" Foreground="Gray" FontSize="11" TextWrapping="Wrap">
-                            Opens an .etl file and replays events. Current stats are reset.
-                        </TextBlock>
-                    </StackPanel>
-                </GroupBox>
-            </Grid>
-        </Expander>
     </Grid>
 </rxui:ReactiveWindow>
