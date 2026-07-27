@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using Microsoft.Win32;
 using ReactiveUI;
 
@@ -27,6 +28,16 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
         // Stop the ViewModel's timers when the window closes (idempotent — safe
         // alongside the main window's `using` in Program.cs).
         Closed += (_, __) => ViewModel?.Dispose();
+    }
+
+    private void OnAddProcessExclusionClick(object sender, RoutedEventArgs e)
+    {
+        // The DataGridRow's DataContext (its ScanStat) flows through the ContextMenu
+        // to the MenuItem — this is the part of the old binding that actually worked.
+        // Call the view model directly: ReactiveCommand.Execute() would needlessly
+        // round-trip through Rx schedulers for a plain synchronous UI action.
+        if (((MenuItem)sender).DataContext is ScanStat stat)
+            ViewModel?.AddProcessExclusion(stat.Name);
     }
 
     private static void OnDragOver(object sender, DragEventArgs e)

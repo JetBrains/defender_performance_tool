@@ -14,6 +14,21 @@
     WindowStartupLocation="CenterScreen"
     AllowDrop="True">
 
+    <Window.Resources>
+        <!-- A ContextMenu lives in a popup outside the window's namescope, so an ElementName
+             command binding would silently resolve to null; the click is routed through
+             code-behind instead (same pattern as the treemap menu). Declared as a resource
+             because event handlers are not allowed inside a Style setter value. -->
+        <ContextMenu x:Key="ProcessRowContextMenu">
+            <MenuItem Header="Add to Defender Exclusions…"
+                      Click="OnAddProcessExclusionClick">
+                <MenuItem.Icon>
+                    <TextBlock Text="&#x1F6E1;"/>
+                </MenuItem.Icon>
+            </MenuItem>
+        </ContextMenu>
+    </Window.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="150"/>   <!-- Row 0: Plot -->
@@ -151,19 +166,7 @@
                     <!-- Right-click a process row to exclude it from scanning -->
                     <DataGrid.RowStyle>
                         <Style TargetType="DataGridRow">
-                            <Setter Property="ContextMenu">
-                                <Setter.Value>
-                                    <ContextMenu>
-                                        <MenuItem Header="Add to Defender Exclusions…"
-                                                  Command="{Binding ElementName=TopProcessesGrid, Path=DataContext.AddProcessExclusionCommand}"
-                                                  CommandParameter="{Binding Name}">
-                                            <MenuItem.Icon>
-                                                <TextBlock Text="&#x1F6E1;"/>
-                                            </MenuItem.Icon>
-                                        </MenuItem>
-                                    </ContextMenu>
-                                </Setter.Value>
-                            </Setter>
+                            <Setter Property="ContextMenu" Value="{StaticResource ProcessRowContextMenu}"/>
                         </Style>
                     </DataGrid.RowStyle>
                     <DataGrid.Columns>

@@ -40,10 +40,16 @@ public static class DefenderExclusions
             "Every exclusion is a protection gap that lowers your defenses, so use exclusions sparingly.\n" +
             "https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-antivirus-exclusions-overview";
 
-        var confirm = MessageBox.Show(message,
-            "Add Defender Exclusion", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        return confirm == MessageBoxResult.Yes;
+        return ShowConfirmation(message, "Add Defender Exclusion");
     }
+
+    /// <summary>
+    /// Shows the confirmation prompt and returns true when the user answers Yes.
+    /// Replaceable in tests (a real MessageBox cannot be automated from the test host).
+    /// </summary>
+    internal static Func<string, string, bool> ShowConfirmation { get; set; } =
+        (message, title) => MessageBox.Show(message, title,
+            MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
 
     private static void AddExclusion(ExclusionKind kind, string target)
     {

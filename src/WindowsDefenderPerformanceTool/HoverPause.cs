@@ -11,19 +11,25 @@ namespace WindowsDefenderPerformanceTool;
 /// mouse is over the watched element, incoming data updates can be deferred so the view
 /// doesn't change under the cursor; the pause is indicated by an orange frame with a
 /// pause icon overlaid on the host panel. Deferred updates run when the mouse leaves.
+/// The pause is retained while a context menu owned by the watched element is open, so
+/// the view doesn't refresh while the user is picking a menu item.
 /// </summary>
 public sealed class HoverPause
 {
     private static readonly Brush IndicatorBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0x8C, 0x00));
 
+    private readonly HoverPauseStateMachine _state = new();
     private readonly Panel _overlayHost;
     private Border? _overlay;
-    private Action? _pendingUpdate;
 
-    public bool IsPaused { get; private set; }
+    public bool IsPaused => _state.IsPaused;
 
     /// <summary>Raised after <see cref="IsPaused"/> changes.</summary>
-    public event Action<bool>? PauseChanged;
+    public event Action<bool>? PauseChanged
+    {
+        add => _state.PauseChanged += value;
+        remove => _state.PauseChanged -= value;
+    }
 
     /// <param name="hoverTarget">Element whose mouse enter/leave toggles the pause.</param>
     /// <param name="overlayHost">Panel that receives the pause indicator overlay
@@ -32,34 +38,34 @@ public sealed class HoverPause
     {
         _overlayHost = overlayHost;
 
-        hoverTarget.MouseEnter += (_, __) =>
+        _state.PauseChanged += paused =>
         {
-            IsPaused = true;
-            ShowOverlay();
-            PauseChanged?.Invoke(true);
+            if (paused) ShowOverlay(); else HideOverlay();
         };
-        hoverTarget.MouseLeave += (_, __) =>
-        {
-            IsPaused = false;
-            HideOverlay();
-            PauseChanged?.Invoke(false);
-            var pending = _pendingUpdate;
-            _pendingUpdate = null;
-            pending?.Invoke();
-        };
+
+        hoverTarget.MouseEnter += (_, __) => _state.MouseEntered();
+        hoverTarget.MouseLeave += (_, __) => _state.MouseLeft();
+
+        // A context menu on a grid row or treemap tile bubbles these routed events up to
+        // the hover target. While the menu is open the pointer may leave the element (onto
+        // the popup) without the user being done — the state machine keeps the pause.
+        hoverTarget.AddHandler(FrameworkElement.ContextMenuOpeningEvent,
+            new ContextMenuEventHandler((_, __) => _state.ContextMenuOpened()));
+        hoverTarget.AddHandler(FrameworkElement.ContextMenuClosingEvent,
+            new ContextMenuEventHandler((_, __) =>
+            {
+                // IsMouseOver is still owned by the popup during Closing — re-evaluate
+                // once the popup has actually closed and input state has settled.
+                hoverTarget.Dispatcher.BeginInvoke(new Action(() =>
+                    _state.ContextMenuClosed(hoverTarget.IsMouseOver)));
+            }));
     }
 
     /// <summary>
-    /// Runs <paramref name="update"/> immediately, or defers it until the mouse leaves
+    /// Runs <paramref name="update"/> immediately, or defers it until the pause ends
     /// when paused. Only the latest deferred update is kept.
     /// </summary>
-    public void ApplyOrDefer(Action update)
-    {
-        if (IsPaused)
-            _pendingUpdate = update;
-        else
-            update();
-    }
+    public void ApplyOrDefer(Action update) => _state.ApplyOrDefer(update);
 
     /// <summary>Re-adds the overlay after the host's children were rebuilt while paused.</summary>
     public void RefreshOverlay()

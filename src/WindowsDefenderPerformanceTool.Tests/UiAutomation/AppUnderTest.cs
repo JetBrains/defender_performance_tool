@@ -70,6 +70,53 @@ public sealed class AppUnderTest : IDisposable
 
     internal Window MainWindow => _mainWindow!;
 
+    /// <summary>Native handle of the app's main window (WPF hosts all controls in one HWND).</summary>
+    public IntPtr MainWindowHandle => _mainWindow!.Properties.NativeWindowHandle.ValueOrDefault;
+
+    /// <summary>Waits for the first data row in the "Top Processes" grid; null when none appears in time.</summary>
+    public AutomationElement? TryWaitForTopProcessRow(TimeSpan timeout)
+    {
+        var grid = WaitFor(() => _mainWindow!
+                .FindFirstDescendant(Cf.ByAutomationId("TopProcessesGrid")),
+            "the 'Top Processes' grid");
+        return Retry.WhileNull(
+                () => grid.FindAllDescendants(Cf.ByControlType(ControlType.DataItem)).FirstOrDefault()
+                      ?? grid.FindAllDescendants(Cf.ByControlType(ControlType.Custom)).FirstOrDefault(),
+                timeout: timeout, interval: PollInterval, ignoreException: true)
+            .Result;
+    }
+
+    /// <summary>Finds an item of the currently open context menu; null when no menu is open.</summary>
+    public AutomationElement? FindContextMenuItem(string namePrefix) =>
+        _mainWindow!
+            .FindAllDescendants(Cf.ByControlType(ControlType.MenuItem))
+            .Concat(_automation.GetDesktop()
+                .FindAllChildren(Cf.ByProcessId(_app!.ProcessId))
+                .SelectMany(w => w.FindAllDescendants(Cf.ByControlType(ControlType.MenuItem))))
+            .FirstOrDefault(m => SafeName(m).StartsWith(namePrefix, StringComparison.Ordinal));
+
+    /// <summary>Waits for an item of the currently open context menu whose name starts with the prefix.</summary>
+    public AutomationElement WaitForContextMenuItem(string namePrefix) =>
+        WaitFor(() => FindContextMenuItem(namePrefix), $"context menu item '{namePrefix}'");
+
+    /// <summary>Waits for a Win32 MessageBox of the app with the given title.</summary>
+    public Window WaitForMessageBox(string title) =>
+        WaitFor(() => FindWindowByName(_mainWindow!, title), $"the '{title}' MessageBox");
+
+    /// <summary>Element name lookup that survives elements vanishing mid-enumeration.</summary>
+    internal static string SafeName(AutomationElement element)
+    {
+        try { return element.Name ?? ""; }
+        catch { return ""; }
+    }
+
+    /// <summary>True when the element's peer is gone (e.g. the row was replaced by a refresh).</summary>
+    internal static bool IsStale(AutomationElement element)
+    {
+        try { _ = element.Name; return false; }
+        catch { return true; }
+    }
+
     /// <summary>Real mouse click, falling back to the Invoke pattern when the point is not clickable.</summary>
     internal static void Click(AutomationElement element)
     {

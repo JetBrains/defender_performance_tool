@@ -231,8 +231,7 @@ public class MainViewModel : ReactiveObject, IDisposable
         ResetCommand = ReactiveCommand.Create(Reset);
         OpenEtlFileCommand = ReactiveCommand.Create(OpenEtlFile);
         RestartAsAdminCommand = ReactiveCommand.Create(RestartAsAdmin);
-        AddProcessExclusionCommand = ReactiveCommand.Create<string>(processName =>
-            DefenderExclusions.AddProcessExclusion(processName));
+        AddProcessExclusionCommand = ReactiveCommand.Create<string>(AddProcessExclusion);
         OpenExclusionManagerCommand = ReactiveCommand.Create(OpenExclusionManager);
 
         _cpuTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
@@ -245,6 +244,10 @@ public class MainViewModel : ReactiveObject, IDisposable
         _exclusionTimer.Start();
         RefreshExclusionCountAsync();
     }
+
+    /// <summary>Adds a Defender exclusion for the given process, asking for confirmation first.</summary>
+    public void AddProcessExclusion(string processName) =>
+        DefenderExclusions.AddProcessExclusion(processName);
 
     private void OpenExclusionManager()
     {
