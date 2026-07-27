@@ -1,6 +1,4 @@
 using System;
-using System.ComponentModel;
-using System.Diagnostics;
 using System.Windows;
 
 namespace WindowsDefenderPerformanceTool;
@@ -9,7 +7,7 @@ namespace WindowsDefenderPerformanceTool;
 /// UI helpers for adding Windows Defender exclusions, with confirmation. Shared by the
 /// top-processes grid (process exclusions), the scan-time treemap (path exclusions) and
 /// the exclusion manager dialog. Delegates to <see cref="DefenderExclusionManager"/>
-/// (a C# port of Add-MpPreference).
+/// (which hosts the Add-MpPreference cmdlet in-process via System.Management.Automation).
 /// </summary>
 public static class DefenderExclusions
 {
@@ -64,30 +62,12 @@ public static class DefenderExclusions
         }
         else
         {
-            // Not elevated — the WMI provider would refuse the change, so relaunch the
-            // equivalent PowerShell cmdlet with a UAC prompt instead.
-            RunAddMpPreferenceElevated(kind, target);
-        }
-    }
-
-    private static void RunAddMpPreferenceElevated(ExclusionKind kind, string target)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo("powershell.exe",
-                    DefenderExclusionManager.BuildPowerShellArguments("Add-MpPreference", kind, target))
-            {
-                Verb = "runas",
-                UseShellExecute = true
-            });
-        }
-        catch (Win32Exception)
-        {
-            // User cancelled the UAC prompt — nothing to do.
-        }
-        catch (Exception ex)
-        {
-            ShowAddError(ex);
+            // The in-process PowerShell engine cannot elevate itself, and we never spawn
+            // powershell.exe — ask the user to restart the tool with administrator rights.
+            MessageBox.Show(
+                "Adding a Defender exclusion requires administrator privileges.\n\n" +
+                "Please restart Windows Defender Performance Tool as administrator and try again.",
+                "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 

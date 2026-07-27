@@ -1,7 +1,8 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
+using System.Management.Automation;
 using System.Security.Principal;
 
 namespace WindowsDefenderPerformanceTool;
@@ -42,7 +43,10 @@ public sealed class ExclusionSnapshot
 }
 
 /// <summary>
-/// Wraps the PowerShell Defender exclusion cmdlets (Get/Add/Remove-MpPreference).
+/// Wraps the PowerShell Defender exclusion cmdlets (Get/Add/Remove-MpPreference) by hosting
+/// the PowerShell engine in-process through System.Management.Automation — the same API
+/// that runs those cmdlets' PowerShell scripts underneath. No powershell.exe process is
+/// ever spawned, not even as a fallback.
 /// Requires elevation to read real values and to modify the lists.
 /// </summary>
 public static class DefenderExclusionManager
@@ -63,65 +67,81 @@ public static class DefenderExclusionManager
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 
-    /// <summary>Builds the powershell.exe argument list that runs the given Defender cmdlet.</summary>
-    public static string BuildPowerShellArguments(string cmdlet, ExclusionKind kind, string value)
-    {
-        var escaped = value.Replace("'", "''");
-        return $"-NoProfile -Command \"{cmdlet} -{PropertyName(kind)} '{escaped}'\"";
-    }
-
     /// <summary>Reads all four exclusion lists. Throws when the Defender provider is unavailable.</summary>
-    public static ExclusionSnapshot GetExclusions() => new()
+    public static ExclusionSnapshot GetExclusions()
     {
-        Paths = ReadList(ExclusionKind.Path, out var hidden),
-        Processes = ReadList(ExclusionKind.Process, out _),
-        Extensions = ReadList(ExclusionKind.Extension, out _),
-        IpAddresses = ReadList(ExclusionKind.IpAddress, out _),
-        HiddenFromLocalUsers = hidden
-    };
+        using var ps = CreatePowerShell();
+        ps.AddCommand("Get-MpPreference");
+        var preference = Invoke(ps, "Get-MpPreference").FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                "Windows Defender preferences are not available. " +
+                "Is Microsoft Defender Antivirus active on this machine?");
+
+        var paths = ReadList(preference, ExclusionKind.Path, out var hidden);
+        return new ExclusionSnapshot
+        {
+            Paths = paths,
+            Processes = ReadList(preference, ExclusionKind.Process, out _),
+            Extensions = ReadList(preference, ExclusionKind.Extension, out _),
+            IpAddresses = ReadList(preference, ExclusionKind.IpAddress, out _),
+            HiddenFromLocalUsers = hidden
+        };
+    }
 
     /// <summary>Adds a value to the given exclusion list. Throws on failure.</summary>
     public static void AddExclusion(ExclusionKind kind, string value) =>
-        RunPowerShell(BuildPowerShellArguments("Add-MpPreference", kind, value));
+        InvokePreferenceChange("Add-MpPreference", kind, value);
 
     /// <summary>Removes a value from the given exclusion list. Throws on failure.</summary>
     public static void RemoveExclusion(ExclusionKind kind, string value) =>
-        RunPowerShell(BuildPowerShellArguments("Remove-MpPreference", kind, value));
+        InvokePreferenceChange("Remove-MpPreference", kind, value);
 
-    private static IReadOnlyList<string> ReadList(ExclusionKind kind, out bool hidden)
+    private static void InvokePreferenceChange(string cmdlet, ExclusionKind kind, string value)
     {
-        var output = RunPowerShell($"-NoProfile -Command \"(Get-MpPreference).{PropertyName(kind)}\"");
-        var values = output.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                           .Select(v => v.Trim())
-                           .Where(v => v.Length > 0)
-                           .ToArray();
-        hidden = values.Any(v => v.StartsWith(HiddenSentinel, StringComparison.Ordinal));
-        return hidden ? Array.Empty<string>() : values;
+        using var ps = CreatePowerShell();
+        // Pass the value as a real cmdlet parameter — never as interpolated script text.
+        ps.AddCommand(cmdlet).AddParameter(PropertyName(kind), new[] { value });
+        Invoke(ps, cmdlet);
     }
 
-    /// <summary>Runs powershell.exe with the given arguments and returns stdout. Throws on failure.</summary>
-    private static string RunPowerShell(string arguments)
+    private static PowerShell CreatePowerShell() => PowerShell.Create();
+
+    private static IReadOnlyList<PSObject> Invoke(PowerShell ps, string what)
     {
-        var psi = new ProcessStartInfo("powershell.exe", arguments)
+        try
         {
-            CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start powershell.exe.");
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-
-        if (process.ExitCode != 0)
+            var results = ps.Invoke();
+            if (ps.HadErrors)
+            {
+                var details = string.Join("\n", ps.Streams.Error
+                    .Select(e => e.Exception?.Message ?? e.ToString())
+                    .Where(m => !string.IsNullOrWhiteSpace(m)));
+                throw new InvalidOperationException(
+                    $"{what} failed. Make sure the tool is running as administrator.\n\n{details}");
+            }
+            return results;
+        }
+        catch (RuntimeException ex)
+        {
             throw new InvalidOperationException(
-                $"Defender command failed (exit code {process.ExitCode}). " +
-                "Make sure the tool is running as administrator.\n\n" + stderr.Trim());
-
-        return stdout;
+                $"{what} failed. Make sure the tool is running as administrator.\n\n{ex.Message}", ex);
+        }
     }
+
+    private static IReadOnlyList<string> ReadList(PSObject preference, ExclusionKind kind, out bool hidden)
+    {
+        var values = AsStringList(preference.Properties[PropertyName(kind)]?.Value);
+        hidden = values.Any(v => v.StartsWith(HiddenSentinel, StringComparison.Ordinal));
+        return hidden
+            ? Array.Empty<string>()
+            : values.Where(v => !string.IsNullOrWhiteSpace(v)).ToArray();
+    }
+
+    private static string[] AsStringList(object? value) => value switch
+    {
+        null => Array.Empty<string>(),
+        string single => new[] { single },
+        IEnumerable items => items.Cast<object>().Select(i => i?.ToString() ?? "").ToArray(),
+        _ => new[] { value.ToString() ?? "" }
+    };
 }
