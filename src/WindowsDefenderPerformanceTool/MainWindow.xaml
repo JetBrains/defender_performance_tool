@@ -153,8 +153,7 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <GroupBox Grid.Column="0" Header="Top Processes" Margin="4,0,2,4">
-                <!-- Wrapper hosts the pause-on-hover overlay (same indicator as the treemap) -->
+            <GroupBox Grid.Column="0" x:Name="TopProcessesGroupBox" Header="Top Processes" Margin="4,0,2,4">
                 <Grid x:Name="TopProcessesPanel">
                 <DataGrid x:Name="TopProcessesGrid"
                           ItemsSource="{Binding TopProcesses}"
@@ -179,8 +178,8 @@
                 </Grid>
             </GroupBox>
 
-            <GroupBox Grid.Column="1" Header="Where Scans Happened" Margin="2,0,4,4">
-                <local:TreemapControl Root="{Binding FilesTreeRoot}"/>
+            <GroupBox Grid.Column="1" x:Name="TreemapGroupBox" Header="Where Scans Happened" Margin="2,0,4,4">
+                <local:TreemapControl x:Name="Treemap" Root="{Binding FilesTreeRoot}"/>
             </GroupBox>
         </Grid>
 

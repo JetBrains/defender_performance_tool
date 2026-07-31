@@ -1,26 +1,33 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Shapes;
 
 namespace WindowsDefenderPerformanceTool;
 
 /// <summary>
 /// Pause-on-hover behavior shared by the treemap and the top-processes grid: while the
 /// mouse is over the watched element, incoming data updates can be deferred so the view
-/// doesn't change under the cursor; the pause is indicated by an orange frame with a
-/// pause icon overlaid on the host panel. Deferred updates run when the mouse leaves.
-/// The pause is retained while a context menu owned by the watched element is open, so
-/// the view doesn't refresh while the user is picking a menu item.
+/// doesn't change under the cursor; the pause is indicated on the owning <see cref="GroupBox"/>:
+/// an orange pause icon is appended to its header and its border turns orange. Deferred
+/// updates run when the mouse leaves. The pause is retained while a context menu owned by
+/// the watched element is open, so the view doesn't refresh while the user is picking a
+/// menu item.
 /// </summary>
 public sealed class HoverPause
 {
     private static readonly Brush IndicatorBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0x8C, 0x00));
 
     private readonly HoverPauseStateMachine _state = new();
-    private readonly Panel _overlayHost;
-    private Border? _overlay;
+    private GroupBox? _indicator;
+
+    // Original GroupBox look, captured the first time the pause indicator is shown
+    // so it can be restored exactly when the pause ends.
+    private bool _originalsCaptured;
+    private object? _originalHeader;
+    private Brush? _originalBorderBrush;
+    private Thickness _originalBorderThickness;
 
     public bool IsPaused => _state.IsPaused;
 
@@ -32,15 +39,15 @@ public sealed class HoverPause
     }
 
     /// <param name="hoverTarget">Element whose mouse enter/leave toggles the pause.</param>
-    /// <param name="overlayHost">Panel that receives the pause indicator overlay
-    /// (the hovered element itself or a wrapper around it).</param>
-    public HoverPause(FrameworkElement hoverTarget, Panel overlayHost)
+    /// <param name="indicator">GroupBox that displays the pause state (header icon +
+    /// orange border). Can also be assigned later via <see cref="Indicator"/>.</param>
+    public HoverPause(FrameworkElement hoverTarget, GroupBox? indicator = null)
     {
-        _overlayHost = overlayHost;
+        _indicator = indicator;
 
         _state.PauseChanged += paused =>
         {
-            if (paused) ShowOverlay(); else HideOverlay();
+            if (paused) ShowIndicator(); else HideIndicator();
         };
 
         hoverTarget.MouseEnter += (_, __) => _state.MouseEntered();
@@ -62,56 +69,89 @@ public sealed class HoverPause
     }
 
     /// <summary>
+    /// GroupBox that displays the pause state. Assignable after construction (e.g. by the
+    /// window hosting the control); if a pause is active the indicator moves immediately.
+    /// </summary>
+    public GroupBox? Indicator
+    {
+        get => _indicator;
+        set
+        {
+            if (_indicator == value) return;
+            if (IsPaused) HideIndicator();
+            _indicator = value;
+            _originalsCaptured = false;
+            if (IsPaused) ShowIndicator();
+        }
+    }
+
+    /// <summary>
     /// Runs <paramref name="update"/> immediately, or defers it until the pause ends
     /// when paused. Only the latest deferred update is kept.
     /// </summary>
     public void ApplyOrDefer(Action update) => _state.ApplyOrDefer(update);
 
-    /// <summary>Re-adds the overlay after the host's children were rebuilt while paused.</summary>
-    public void RefreshOverlay()
+    private void ShowIndicator()
     {
-        HideOverlay();
-        if (IsPaused) ShowOverlay();
-    }
+        if (_indicator == null) return;
 
-    private void ShowOverlay()
-    {
-        if (_overlay != null || _overlayHost.ActualWidth < 20 || _overlayHost.ActualHeight < 20) return;
-
-        _overlay = new Border
+        if (!_originalsCaptured)
         {
-            BorderBrush = IndicatorBrush,
-            BorderThickness = new Thickness(2),
-            IsHitTestVisible = false,
-            Child = new TextBlock
-            {
-                Text = "\u23F8", // ⏸
-                FontSize = 20,
-                Foreground = Brushes.White,
-                Background = IndicatorBrush,
-                Padding = new Thickness(6, 3, 6, 3),
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(4),
-                IsHitTestVisible = false,
-            },
-        };
-
-        // A Canvas doesn't stretch its children — track the host size explicitly.
-        if (_overlayHost is Canvas)
-        {
-            _overlay.SetBinding(FrameworkElement.WidthProperty, new Binding(nameof(FrameworkElement.ActualWidth)) { Source = _overlayHost });
-            _overlay.SetBinding(FrameworkElement.HeightProperty, new Binding(nameof(FrameworkElement.ActualHeight)) { Source = _overlayHost });
+            _originalHeader = _indicator.Header;
+            _originalBorderBrush = _indicator.BorderBrush;
+            _originalBorderThickness = _indicator.BorderThickness;
+            _originalsCaptured = true;
         }
 
-        Panel.SetZIndex(_overlay, int.MaxValue);
-        _overlayHost.Children.Add(_overlay);
+        var header = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            ToolTip = "Updates paused while the mouse is over this view — move it away to resume.",
+        };
+        header.Children.Add(new TextBlock { Text = _originalHeader?.ToString() ?? string.Empty });
+        header.Children.Add(CreatePauseIcon());
+        _indicator.Header = header;
+        _indicator.BorderBrush = IndicatorBrush;
+        _indicator.BorderThickness = new Thickness(2);
     }
 
-    private void HideOverlay()
+    // Hand-drawn pause icon (two vertical bars): unlike the ⏸ glyph, which falls back to
+    // an emoji font and renders tiny and faint at header size, vector shapes are crisp,
+    // scale-independent and always the right color.
+    private static FrameworkElement CreatePauseIcon()
     {
-        if (_overlay == null) return;
-        _overlayHost.Children.Remove(_overlay);
-        _overlay = null;
+        var icon = new Grid
+        {
+            Width = 12,
+            Height = 14,
+            Margin = new Thickness(6, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        icon.Children.Add(new Rectangle
+        {
+            Width = 4,
+            RadiusX = 1,
+            RadiusY = 1,
+            Fill = IndicatorBrush,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        });
+        icon.Children.Add(new Rectangle
+        {
+            Width = 4,
+            RadiusX = 1,
+            RadiusY = 1,
+            Fill = IndicatorBrush,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        });
+        return icon;
+    }
+
+    private void HideIndicator()
+    {
+        if (_indicator == null || !_originalsCaptured) return;
+
+        _indicator.Header = _originalHeader;
+        _indicator.BorderBrush = _originalBorderBrush;
+        _indicator.BorderThickness = _originalBorderThickness;
     }
 }

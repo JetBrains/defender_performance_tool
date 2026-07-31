@@ -20,7 +20,7 @@ namespace WindowsDefenderPerformanceTool;
 /// While zoomed, a breadcrumb overlay at the top left jumps back to the overview.
 /// Tiles are highlighted on hover. While the mouse is over the control, incoming data
 /// updates are paused (so the view doesn't change under the cursor or lose the zoom);
-/// this is indicated by an orange frame with a pause icon.
+/// this is indicated on the owning GroupBox (orange pause icon in the header and border).
 /// </summary>
 public sealed class TreemapControl : Canvas
 {
@@ -70,7 +70,8 @@ public sealed class TreemapControl : Canvas
     private ScanTreeNode? _currentTree;
 
     // Pause-on-hover: while the mouse is over the control, Root changes are deferred
-    // (applied with zoom reset when the mouse leaves) and an orange pause frame is shown.
+    // (applied with zoom reset when the mouse leaves) and the owning GroupBox shows
+    // the pause state (orange pause icon in the header and border).
     private readonly HoverPause _hoverPause;
 
     public TreemapControl()
@@ -78,8 +79,11 @@ public sealed class TreemapControl : Canvas
         // Transparent background so the whole area hit-tests and hover-pause also works
         // over the gaps between tiles (null background would let hits fall through).
         Background = Brushes.Transparent;
-        _hoverPause = new HoverPause(this, this);
+        _hoverPause = new HoverPause(this);
     }
+
+    /// <summary>Points the pause-on-hover indicator at the GroupBox hosting this control.</summary>
+    public void SetPauseIndicator(GroupBox groupBox) => _hoverPause.Indicator = groupBox;
 
     // Zoom state: path from Root to the currently displayed node. Empty = full overview.
     private readonly List<ScanTreeNode> _zoomStack = new();
@@ -129,7 +133,6 @@ public sealed class TreemapControl : Canvas
     private void Rebuild()
     {
         Children.Clear();
-        _hoverPause.RefreshOverlay();
         _renderedNodes = 0;
 
         var width = ActualWidth;
