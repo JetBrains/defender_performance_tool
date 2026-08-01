@@ -2,7 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
-using System.Reactive.Subjects;
 using System.Threading;
 using Microsoft.Diagnostics.Tracing;
 using Microsoft.Diagnostics.Tracing.Session;
@@ -19,8 +18,6 @@ public sealed class EtwListener : IDisposable
     private static readonly string SessionName =
         "WindowsDefenderPerformanceToolSession-" + Process.GetCurrentProcess().Id;
 
-    private readonly Subject<EventInfo> _eventSubject = new();
-    private readonly Subject<long> _rawEventCount = new();
     private readonly TraceEventSession? _session;
     private readonly ETWTraceEventSource _source;
     private readonly Thread _processingThread;
@@ -36,10 +33,14 @@ public sealed class EtwListener : IDisposable
     private int _eventsSinceLastPrune;
     private DateTime _newestTimestamp = DateTime.MinValue;
 
-    public IObservable<EventInfo> Events => _eventSubject;
+    /// <summary>Raised on the processing thread for each matched Start/Stop pair.</summary>
+    public event Action<EventInfo>? EventReceived;
 
-    /// <summary>Emits the running total of raw ETW events received (all opcodes, not just matched pairs).</summary>
-    public IObservable<long> RawEventCount => _rawEventCount;
+    /// <summary>Raised when an ETL file has been fully replayed (file mode only).</summary>
+    public event Action? Completed;
+
+    /// <summary>Running total of raw ETW events received (all opcodes, not just matched pairs).</summary>
+    public long RawEventCount => Interlocked.Read(ref _rawCount);
 
     /// <summary>Real-time ETW session mode. Requires administrator privileges.</summary>
     public EtwListener()
@@ -50,14 +51,14 @@ public sealed class EtwListener : IDisposable
         _processingThread = CreateProcessingThread(completesOnReturn: false);
     }
 
-    /// <summary>ETL file replay mode. Processes all events from the file then completes.</summary>
+    /// <summary>ETL file replay mode. Processes all events from the file, then raises <see cref="Completed"/>.</summary>
     public EtwListener(string etlFilePath)
     {
         _source = new ETWTraceEventSource(etlFilePath);
         _processingThread = CreateProcessingThread(completesOnReturn: true);
     }
 
-    /// <summary>Starts processing events. Subscribe to <see cref="Events"/> before calling this.</summary>
+    /// <summary>Starts processing events. Subscribe to <see cref="EventReceived"/> before calling this.</summary>
     public void Start() => _processingThread.Start();
 
     private Thread CreateProcessingThread(bool completesOnReturn)
@@ -76,7 +77,7 @@ public sealed class EtwListener : IDisposable
             finally
             {
                 if (completesOnReturn)
-                    _eventSubject.OnCompleted();
+                    Completed?.Invoke();
             }
         })
         {
@@ -87,7 +88,7 @@ public sealed class EtwListener : IDisposable
 
     private void OnEvent(TraceEvent data)
     {
-        _rawEventCount.OnNext(Interlocked.Increment(ref _rawCount));
+        Interlocked.Increment(ref _rawCount);
 
         // OnEvent runs on the single Process() thread — plain fields are safe.
         if (data.TimeStamp > _newestTimestamp) _newestTimestamp = data.TimeStamp;
@@ -117,7 +118,7 @@ public sealed class EtwListener : IDisposable
                 {
                     if (!_pendingStarts.TryRemove(data.ActivityID, out var startInfo)) break;
                     var durationMsec = (data.TimeStamp - startInfo.Timestamp).TotalMilliseconds;
-                    _eventSubject.OnNext(new EventInfo(durationMsec, startInfo.Process, data.TimeStamp,
+                    EventReceived?.Invoke(new EventInfo(durationMsec, startInfo.Process, data.TimeStamp,
                         startInfo.FilePath));
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -156,9 +157,6 @@ public sealed class EtwListener : IDisposable
             _source.Dispose();
         }
 
-        _eventSubject.OnCompleted();
-        _eventSubject.Dispose();
-        _rawEventCount.OnCompleted();
-        _rawEventCount.Dispose();
+        Completed?.Invoke();
     }
 }

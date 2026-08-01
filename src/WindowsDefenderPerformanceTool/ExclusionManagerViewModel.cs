@@ -1,18 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Linq;
 using System.Net;
-using System.Reactive;
-using System.Reactive.Linq;
 using System.Threading.Tasks;
-using System.Windows;
-using ReactiveUI;
+using WindowsDefenderPerformanceTool.Mvvm;
 
 namespace WindowsDefenderPerformanceTool;
 
 /// <summary>One tab of the exclusion manager: a single exclusion list with add/remove.</summary>
-public sealed class ExclusionKindViewModel : ReactiveObject
+public sealed class ExclusionKindViewModel : ViewModelBase
 {
     private readonly ExclusionManagerViewModel _owner;
 
@@ -25,18 +21,22 @@ public sealed class ExclusionKindViewModel : ReactiveObject
     public string NewValue
     {
         get => _newValue;
-        set => this.RaiseAndSetIfChanged(ref _newValue, value);
+        set
+        {
+            if (Set(ref _newValue, value))
+                AddCommand.RaiseCanExecuteChanged();
+        }
     }
 
     private string? _selectedItem;
     public string? SelectedItem
     {
         get => _selectedItem;
-        set => this.RaiseAndSetIfChanged(ref _selectedItem, value);
+        set => Set(ref _selectedItem, value);
     }
 
-    public ReactiveCommand<Unit, Unit> AddCommand { get; }
-    public ReactiveCommand<string?, Unit> RemoveCommand { get; }
+    public AsyncRelayCommand AddCommand { get; }
+    public AsyncRelayCommand RemoveCommand { get; }
 
     public ExclusionKindViewModel(ExclusionManagerViewModel owner, ExclusionKind kind, string title, string hint)
     {
@@ -45,18 +45,14 @@ public sealed class ExclusionKindViewModel : ReactiveObject
         Title = title;
         Hint = hint;
 
-        var canAdd = this.WhenAnyValue(
-                x => x.NewValue,
-                x => x._owner.IsBusy,
-                (value, busy) => !busy && !string.IsNullOrWhiteSpace(value))
-            .ObserveOn(RxApp.MainThreadScheduler);
-
-        AddCommand = ReactiveCommand.CreateFromTask(AddAsync, canAdd);
-        AddCommand.ThrownExceptions.Subscribe(_owner.ReportError);
-
-        RemoveCommand = ReactiveCommand.CreateFromTask<string?>(RemoveAsync);
-        RemoveCommand.ThrownExceptions.Subscribe(_owner.ReportError);
+        AddCommand = new AsyncRelayCommand(AddAsync, CanAdd, _owner.ReportError);
+        RemoveCommand = new AsyncRelayCommand(p => RemoveAsync(p as string), onError: _owner.ReportError);
     }
+
+    private bool CanAdd() => !_owner.IsBusy && !string.IsNullOrWhiteSpace(NewValue);
+
+    /// <summary>Called by the owner when its IsBusy changes (part of AddCommand's CanExecute).</summary>
+    internal void RaiseAddCanExecuteChanged() => AddCommand.RaiseCanExecuteChanged();
 
     private async Task AddAsync()
     {
@@ -102,7 +98,7 @@ public sealed class ExclusionKindViewModel : ReactiveObject
 }
 
 /// <summary>View model behind the exclusion manager dialog.</summary>
-public sealed class ExclusionManagerViewModel : ReactiveObject
+public sealed class ExclusionManagerViewModel : ViewModelBase
 {
     public ExclusionKindViewModel Paths { get; }
     public ExclusionKindViewModel Processes { get; }
@@ -116,31 +112,36 @@ public sealed class ExclusionManagerViewModel : ReactiveObject
     public int TotalCount
     {
         get => _totalCount;
-        private set => this.RaiseAndSetIfChanged(ref _totalCount, value);
+        private set => Set(ref _totalCount, value);
     }
 
     private bool _isBusy;
     public bool IsBusy
     {
         get => _isBusy;
-        private set => this.RaiseAndSetIfChanged(ref _isBusy, value);
+        private set
+        {
+            if (Set(ref _isBusy, value))
+                foreach (var kind in Kinds)
+                    kind.RaiseAddCanExecuteChanged();
+        }
     }
 
     private string _statusMessage = "";
     public string StatusMessage
     {
         get => _statusMessage;
-        private set => this.RaiseAndSetIfChanged(ref _statusMessage, value);
+        private set => Set(ref _statusMessage, value);
     }
 
     private bool _statusIsError;
     public bool StatusIsError
     {
         get => _statusIsError;
-        private set => this.RaiseAndSetIfChanged(ref _statusIsError, value);
+        private set => Set(ref _statusIsError, value);
     }
 
-    public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
+    public AsyncRelayCommand RefreshCommand { get; }
 
     public ExclusionManagerViewModel()
     {
@@ -154,10 +155,8 @@ public sealed class ExclusionManagerViewModel : ReactiveObject
             "IP addresses whose inbound/outbound traffic is not scanned (e.g. 192.168.1.10).");
         Kinds = new[] { Paths, Processes, Extensions, IpAddresses };
 
-        RefreshCommand = ReactiveCommand.CreateFromTask(RefreshAsync);
-        RefreshCommand.ThrownExceptions.Subscribe(ReportError);
-
-        RefreshCommand.Execute().Subscribe();
+        RefreshCommand = new AsyncRelayCommand(RefreshAsync, onError: ReportError);
+        RefreshCommand.Execute(null);
     }
 
     public async Task RefreshAsync()

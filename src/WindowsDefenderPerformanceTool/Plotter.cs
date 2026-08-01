@@ -20,7 +20,7 @@ public sealed class Plotter : IDisposable
     private const int MaxBuckets = 24 * 60 * 60;
 
     private readonly WpfPlot _wpfPlot;
-    private readonly IDisposable _subscription;
+    private readonly EventRelay _events;
     private readonly DispatcherTimer _timer;
 
     // 1-second buckets keyed by (DateTime.Ticks / TicksPerSecond)
@@ -39,12 +39,13 @@ public sealed class Plotter : IDisposable
 
     public WpfPlot WpfPlot => _wpfPlot;
 
-    public Plotter(IObservable<EventInfo> events)
+    public Plotter(EventRelay events)
     {
+        _events = events;
         _wpfPlot = new WpfPlot();
         ConfigurePlot();
 
-        _subscription = events.Subscribe(OnEventReceived);
+        _events.Received += OnEventReceived;
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += OnTimerTick;
@@ -305,6 +306,6 @@ public sealed class Plotter : IDisposable
     public void Dispose()
     {
         _timer.Stop();
-        _subscription.Dispose();
+        _events.Received -= OnEventReceived;
     }
 }

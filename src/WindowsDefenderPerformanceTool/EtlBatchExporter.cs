@@ -47,27 +47,25 @@ internal static class EtlBatchExporter
             using var done = new ManualResetEventSlim(false);
 
             var listener = new EtwListener(filePath);
-            listener.Events.Subscribe(
-                info =>
+            listener.EventReceived += info =>
+            {
+                totalMs += info.DurationMsec;
+                matchedCount++;
+
+                if (!string.IsNullOrEmpty(info.Process))
                 {
-                    totalMs += info.DurationMsec;
-                    matchedCount++;
+                    processTotals.TryGetValue(info.Process, out var existing);
+                    processTotals[info.Process] = existing + info.DurationMsec;
+                }
 
-                    if (!string.IsNullOrEmpty(info.Process))
-                    {
-                        processTotals.TryGetValue(info.Process, out var existing);
-                        processTotals[info.Process] = existing + info.DurationMsec;
-                    }
-
-                    if (!string.IsNullOrEmpty(info.FilePath))
-                    {
-                        var filePath = DevicePathConverter.ToDosPath(info.FilePath);
-                        fileTotals.TryGetValue(filePath, out var existing);
-                        fileTotals[filePath] = existing + info.DurationMsec;
-                    }
-                },
-                _ => done.Set(),
-                () => done.Set());
+                if (!string.IsNullOrEmpty(info.FilePath))
+                {
+                    var filePath = DevicePathConverter.ToDosPath(info.FilePath);
+                    fileTotals.TryGetValue(filePath, out var existing);
+                    fileTotals[filePath] = existing + info.DurationMsec;
+                }
+            };
+            listener.Completed += () => done.Set();
 
             listener.Start();
             done.Wait();

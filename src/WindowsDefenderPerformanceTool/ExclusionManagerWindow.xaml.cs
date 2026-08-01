@@ -1,13 +1,15 @@
 using System;
 using System.Globalization;
+using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
-using ReactiveUI;
 
 namespace WindowsDefenderPerformanceTool;
 
-public partial class ExclusionManagerWindow : ReactiveWindow<ExclusionManagerViewModel>
+public partial class ExclusionManagerWindow : Window
 {
+    public ExclusionManagerViewModel ViewModel { get; }
+
     public ExclusionManagerWindow(ExclusionManagerViewModel viewModel)
     {
         InitializeComponent();

@@ -4,12 +4,13 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
-using ReactiveUI;
 
 namespace WindowsDefenderPerformanceTool;
 
-public partial class MainWindow : ReactiveWindow<MainViewModel>
+public partial class MainWindow : Window
 {
+    public MainViewModel ViewModel { get; }
+
     public MainWindow(MainViewModel viewModel)
     {
         InitializeComponent();
@@ -28,17 +29,16 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
 
         // Stop the ViewModel's timers when the window closes (idempotent — safe
         // alongside the main window's `using` in Program.cs).
-        Closed += (_, __) => ViewModel?.Dispose();
+        Closed += (_, __) => ViewModel.Dispose();
     }
 
     private void OnAddProcessExclusionClick(object sender, RoutedEventArgs e)
     {
         // The DataGridRow's DataContext (its ScanStat) flows through the ContextMenu
         // to the MenuItem — this is the part of the old binding that actually worked.
-        // Call the view model directly: ReactiveCommand.Execute() would needlessly
-        // round-trip through Rx schedulers for a plain synchronous UI action.
+        // Call the view model directly for this plain synchronous UI action.
         if (((MenuItem)sender).DataContext is ScanStat stat)
-            ViewModel?.AddProcessExclusion(stat.Name);
+            ViewModel.AddProcessExclusion(stat.Name);
     }
 
     private static void OnDragOver(object sender, DragEventArgs e)
@@ -70,7 +70,7 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
         if (etlFiles.Length == 1)
         {
             // Single file — load in this window
-            ViewModel!.LoadEtlFile(etlFiles[0]);
+            ViewModel.LoadEtlFile(etlFiles[0]);
             return;
         }
 
@@ -139,7 +139,7 @@ public partial class MainWindow : ReactiveWindow<MainViewModel>
         finally
         {
             IsEnabled = true;
-            Title = ViewModel!.WindowTitle;
+            Title = ViewModel.WindowTitle;
         }
     }
 }
