@@ -1,9 +1,7 @@
-<rxui:ReactiveWindow
+<Window
     x:Class="WindowsDefenderPerformanceTool.MainWindow"
-    x:TypeArguments="local:MainViewModel"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:rxui="http://reactiveui.net"
     xmlns:local="clr-namespace:WindowsDefenderPerformanceTool"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -29,12 +27,53 @@
         </ContextMenu>
     </Window.Resources>
 
+    <DockPanel>
+        <!-- Classic main menu: replaces the bottom action-button row -->
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Open ETL Recording…"
+                          Command="{Binding OpenEtlFileCommand}"
+                          ToolTip="Opens an .etl recording and replays events. Current stats are reset.
+ETL files can also be dropped onto the window."/>
+                <Separator/>
+                <MenuItem Header="E_xit" Command="ApplicationCommands.Close"/>
+            </MenuItem>
+            <MenuItem Header="_Stats">
+                <MenuItem Header="Copy _Human Readable Stats"
+                          Command="{Binding CopyHumanReadableCommand}"/>
+                <MenuItem Header="Copy _JSON"
+                          Command="{Binding CopyJsonCommand}"/>
+                <Separator/>
+                <MenuItem Header="_Reset" Command="{Binding ResetCommand}"/>
+            </MenuItem>
+            <MenuItem Header="_Tools" AutomationProperties.AutomationId="ToolsMenu">
+                <!-- Exclusion manager. Only useful (and only shown) when elevated:
+                     Defender hides exclusions from non-administrators. -->
+                <MenuItem AutomationProperties.AutomationId="ExclusionsButton"
+                          Header="_Exclusion Manager…"
+                          Command="{Binding OpenExclusionManagerCommand}">
+                    <MenuItem.Style>
+                        <Style TargetType="MenuItem">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsNotRunningAsAdmin}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </MenuItem.Style>
+                    <MenuItem.Icon>
+                        <Image Source="{Binding UacShieldIcon}" Width="16" Height="16"
+                               RenderOptions.BitmapScalingMode="HighQuality"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+        </Menu>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="150"/>   <!-- Row 0: Plot -->
             <RowDefinition Height="Auto"/>  <!-- Row 1: Aggregate stats -->
             <RowDefinition Height="*"/>     <!-- Row 2: Top grids -->
-            <RowDefinition Height="Auto"/>  <!-- Row 3: Action buttons -->
         </Grid.RowDefinitions>
 
         <!-- Row 0: Scan duration plot -->
@@ -65,36 +104,6 @@
                                VerticalAlignment="Center"/>
                         <TextBlock Text="Restart to enable live monitoring"
                                    Margin="6,0,0,0" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-
-                <!-- Exclusion manager: shield icon + total exclusions count, click to manage.
-                     Only useful (and only shown) when elevated: Defender hides exclusions
-                     from non-administrators. -->
-                <Button DockPanel.Dock="Right"
-                        AutomationProperties.AutomationId="ExclusionsButton"
-                        Command="{Binding OpenExclusionManagerCommand}"
-                        Padding="8,4"
-                        Margin="0,0,8,0"
-                        VerticalAlignment="Center"
-                        ToolTip="{Binding ExclusionTooltip, Mode=OneWay}">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsNotRunningAsAdmin}" Value="True">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                    <StackPanel Orientation="Horizontal">
-                        <Image Source="{Binding UacShieldIcon}" Width="16" Height="16"
-                               RenderOptions.BitmapScalingMode="HighQuality"
-                               VerticalAlignment="Center"/>
-                        <TextBlock Margin="6,0,0,0" VerticalAlignment="Center">
-                            <Run Text="Exclusions: "/>
-                            <Run Text="{Binding ExclusionCountText, Mode=OneWay}" FontWeight="SemiBold"/>
-                        </TextBlock>
                     </StackPanel>
                 </Button>
 
@@ -182,23 +191,6 @@
                 <local:TreemapControl x:Name="Treemap" Root="{Binding FilesTreeRoot}"/>
             </GroupBox>
         </Grid>
-
-        <!-- Row 3: Action buttons -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="8,4,8,4">
-            <Button Command="{Binding CopyHumanReadableCommand}" Padding="14,6" Margin="0,0,8,0">
-                Copy Human Readable Stats
-            </Button>
-            <Button Command="{Binding CopyJsonCommand}" Padding="14,6" Margin="0,0,8,0">
-                Copy JSON
-            </Button>
-            <Button Command="{Binding ResetCommand}" Padding="14,6" Margin="0,0,8,0">
-                Reset
-            </Button>
-            <Button Command="{Binding OpenEtlFileCommand}" Padding="14,6"
-                    ToolTip="Opens an .etl recording and replays events. Current stats are reset.
-ETL files can also be dropped onto the window.">
-                Open ETL Recording…
-            </Button>
-        </StackPanel>
     </Grid>
-</rxui:ReactiveWindow>
+    </DockPanel>
+</Window>

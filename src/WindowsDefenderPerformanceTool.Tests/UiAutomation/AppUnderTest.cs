@@ -49,14 +49,22 @@ public sealed class AppUnderTest : IDisposable
         }
     }
 
-    /// <summary>Clicks the "Exclusions" button on the main window and wraps the dialog that opens.</summary>
+    /// <summary>Opens Tools → Exclusion Manager and wraps the dialog that opens.</summary>
     public ExclusionManagerDialog OpenExclusionManager()
     {
-        var button = WaitFor(() => _mainWindow!
+        // The exclusion manager lives in the main menu's Tools submenu; its UIA element
+        // only exists while the submenu is expanded.
+        var toolsMenu = WaitFor(() => _mainWindow!
+                .FindFirstDescendant(Cf.ByAutomationId("ToolsMenu"))?
+                .AsMenuItem(),
+            "Tools menu on the main window");
+        toolsMenu.Expand();
+
+        var menuItem = WaitFor(() => _mainWindow!
                 .FindFirstDescendant(Cf.ByAutomationId("ExclusionsButton"))?
-                .AsButton(),
-            "Exclusions button on the main window");
-        Click(button);
+                .AsMenuItem(),
+            "Exclusion Manager item in the Tools menu");
+        menuItem.Invoke();
 
         // The exclusion manager is an owned dialog: UIA exposes it as a descendant of the
         // main window rather than as a desktop child, so search the subtree first.
@@ -272,9 +280,9 @@ public sealed class ExclusionManagerDialog : IDisposable
         // Success is reported in the status bar once the WMI write + refresh completed.
         var status = WaitVisible("StatusText", ControlType.Text);
         Retry.WhileFalse(
-            () => SafeName(status).Contains("Added", StringComparison.OrdinalIgnoreCase),
+            () => SafeName(status).IndexOf("Added", StringComparison.OrdinalIgnoreCase) >= 0,
             timeout: UiTimeout, interval: PollInterval, ignoreException: true);
-        if (!SafeName(status).Contains("Added", StringComparison.OrdinalIgnoreCase))
+        if (SafeName(status).IndexOf("Added", StringComparison.OrdinalIgnoreCase) < 0)
             throw new InvalidOperationException($"Add was not confirmed. Status bar shows: \"{SafeName(status)}\"");
     }
 

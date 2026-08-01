@@ -2,15 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Reactive;
-using System.Reactive.Linq;
-using System.Reactive.Subjects;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -18,15 +15,15 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Lib;
 using Microsoft.Win32;
-using Newtonsoft.Json;
-using ReactiveUI;
 using ScottPlot;
+using WindowsDefenderPerformanceTool.Mvvm;
 
 namespace WindowsDefenderPerformanceTool;
 
-public class MainViewModel : ReactiveObject, IDisposable
+public class MainViewModel : ViewModelBase, IDisposable
 {
     private const int TopN = 30;
+    private const string DefaultWindowTitle = "Windows Defender Performance Tool";
 
     // Stats dictionary bounds: pruned to the largest entries when exceeded, so long
     // sessions can't grow memory or RefreshStats() cost without limit.
@@ -34,111 +31,100 @@ public class MainViewModel : ReactiveObject, IDisposable
     private const int PruneToEntries = 1_000;
 
     // Central relay: both live and file listeners feed into this
-    private readonly Subject<EventInfo> _eventsRelay = new();
+    private readonly EventRelay _eventsRelay = new();
+
+    // Event batching: the ETW processing thread appends here; a 250ms timer drains the
+    // list on the UI thread. Without batching, RefreshStats() (O(n log n) sort +
+    // ObservableCollection rebuild + tree rebuild) would fire for every event,
+    // overwhelming the dispatcher queue under heavy scan load.
+    private readonly List<EventInfo> _pendingEvents = new();
+    private readonly DispatcherTimer _batchTimer;
 
     private readonly Plotter _plotter;
     private EtwListener? _liveListener;
-
-    private IDisposable? _liveSubscription;
-    private IDisposable? _liveRawSubscription;
-    private IDisposable? _fileSubscription;
-    private IDisposable? _fileRawSubscription;
-    private IDisposable? _statsSubscription;
     private EtwListener? _fileListener;
+    private readonly DispatcherTimer _rawCountTimer;
     private readonly DispatcherTimer _cpuTimer;
-    private readonly DispatcherTimer _exclusionTimer;
-    private bool _exclusionQueryRunning;
     private TimeSpan? _cpuKernelBaseline;
     private TimeSpan? _cpuUserBaseline;
 
-    // Stats (accessed only on main thread via ObserveOn)
+    // Stats (accessed only on the UI thread via the batch timer)
     private readonly Dictionary<string, double> _processTotals = new();
     private readonly Dictionary<string, double> _fileTotals = new();
     private double _totalScannedMs;
 
-    // Reactive properties
     private double _totalScannedSeconds;
     public double TotalScannedSeconds
     {
         get => _totalScannedSeconds;
-        private set => this.RaiseAndSetIfChanged(ref _totalScannedSeconds, value);
+        private set => Set(ref _totalScannedSeconds, value);
     }
 
     private long _totalEventsProcessed;
     public long TotalEventsProcessed
     {
         get => _totalEventsProcessed;
-        private set => this.RaiseAndSetIfChanged(ref _totalEventsProcessed, value);
+        private set => Set(ref _totalEventsProcessed, value);
     }
 
     private bool _cpuTimesAvailable;
     public bool CpuTimesAvailable
     {
         get => _cpuTimesAvailable;
-        private set => this.RaiseAndSetIfChanged(ref _cpuTimesAvailable, value);
+        private set => Set(ref _cpuTimesAvailable, value);
     }
 
     private string _kernelTimeText = "";
     public string KernelTimeText
     {
         get => _kernelTimeText;
-        private set => this.RaiseAndSetIfChanged(ref _kernelTimeText, value);
+        private set => Set(ref _kernelTimeText, value);
     }
 
     private string _userTimeText = "";
     public string UserTimeText
     {
         get => _userTimeText;
-        private set => this.RaiseAndSetIfChanged(ref _userTimeText, value);
+        private set => Set(ref _userTimeText, value);
     }
 
     private string _totalCpuTimeText = "";
     public string TotalCpuTimeText
     {
         get => _totalCpuTimeText;
-        private set => this.RaiseAndSetIfChanged(ref _totalCpuTimeText, value);
+        private set => Set(ref _totalCpuTimeText, value);
     }
 
     private string _cpuStatusMessage = "";
     public string CpuStatusMessage
     {
         get => _cpuStatusMessage;
-        private set => this.RaiseAndSetIfChanged(ref _cpuStatusMessage, value);
+        private set => Set(ref _cpuStatusMessage, value);
     }
 
     private string? _cpuStatusTooltip;
     public string? CpuStatusTooltip
     {
         get => _cpuStatusTooltip;
-        private set => this.RaiseAndSetIfChanged(ref _cpuStatusTooltip, value);
-    }
-
-    private string _exclusionCountText = "…";
-    public string ExclusionCountText
-    {
-        get => _exclusionCountText;
-        private set => this.RaiseAndSetIfChanged(ref _exclusionCountText, value);
-    }
-
-    private string _exclusionTooltip = "";
-    public string ExclusionTooltip
-    {
-        get => _exclusionTooltip;
-        private set => this.RaiseAndSetIfChanged(ref _exclusionTooltip, value);
+        private set => Set(ref _cpuStatusTooltip, value);
     }
 
     private string _snapshotName = "";
     public string SnapshotName
     {
         get => _snapshotName;
-        private set => this.RaiseAndSetIfChanged(ref _snapshotName, value);
+        private set
+        {
+            if (Set(ref _snapshotName, value))
+                WindowTitle = string.IsNullOrEmpty(value) ? DefaultWindowTitle : $"{DefaultWindowTitle} — {value}";
+        }
     }
 
-    private string _windowTitle = "Windows Defender Performance Tool";
+    private string _windowTitle = DefaultWindowTitle;
     public string WindowTitle
     {
         get => _windowTitle;
-        private set => this.RaiseAndSetIfChanged(ref _windowTitle, value);
+        private set => Set(ref _windowTitle, value);
     }
 
     public bool IsRunningAsAdmin { get; } =
@@ -162,7 +148,7 @@ public class MainViewModel : ReactiveObject, IDisposable
         set
         {
             var wasPaused = _topProcessesPaused;
-            this.RaiseAndSetIfChanged(ref _topProcessesPaused, value);
+            Set(ref _topProcessesPaused, value);
             if (wasPaused && !value && _topProcessesRefreshPending)
             {
                 _topProcessesRefreshPending = false;
@@ -176,73 +162,58 @@ public class MainViewModel : ReactiveObject, IDisposable
     public ScanTreeNode? FilesTreeRoot
     {
         get => _filesTreeRoot;
-        private set => this.RaiseAndSetIfChanged(ref _filesTreeRoot, value);
+        private set => Set(ref _filesTreeRoot, value);
     }
 
     // Exposes the ScottPlot control for the View
     public WpfPlot PlotControl => _plotter.WpfPlot;
 
-    public ReactiveCommand<Unit, Unit> CopyHumanReadableCommand { get; }
-    public ReactiveCommand<Unit, Unit> CopyJsonCommand { get; }
-    public ReactiveCommand<Unit, Unit> ResetCommand { get; }
-    public ReactiveCommand<Unit, Unit> OpenEtlFileCommand { get; }
-    public ReactiveCommand<Unit, Unit> RestartAsAdminCommand { get; }
-    public ReactiveCommand<string, Unit> AddProcessExclusionCommand { get; }
-    public ReactiveCommand<Unit, Unit> OpenExclusionManagerCommand { get; }
+    public RelayCommand CopyHumanReadableCommand { get; }
+    public RelayCommand CopyJsonCommand { get; }
+    public RelayCommand ResetCommand { get; }
+    public RelayCommand OpenEtlFileCommand { get; }
+    public RelayCommand RestartAsAdminCommand { get; }
+    public RelayCommand AddProcessExclusionCommand { get; }
+    public RelayCommand OpenExclusionManagerCommand { get; }
 
     public MainViewModel(bool startLiveMonitoring = true)
     {
-        _plotter = new Plotter(_eventsRelay.AsObservable());
+        _plotter = new Plotter(_eventsRelay);
+        _eventsRelay.Received += OnEventReceived;
 
-        // Batch events into 250ms windows before dispatching to the UI thread.
-        // Without batching, RefreshStats() (O(n log n) sort + ObservableCollection rebuild + tree rebuild)
-        // fires for every event, overwhelming the dispatcher queue under heavy scan load.
-        _statsSubscription = _eventsRelay
-            .Buffer(TimeSpan.FromMilliseconds(250))
-            .Where(batch => batch.Count > 0)
-            .ObserveOn(RxApp.MainThreadScheduler)
-            .Subscribe(OnEventBatch);
+        _batchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _batchTimer.Tick += OnBatchTimerTick;
+        _batchTimer.Start();
 
-        // Keep title in sync with snapshot name
-        this.WhenAnyValue(x => x.SnapshotName)
-            .Subscribe(name =>
-            {
-                WindowTitle = string.IsNullOrEmpty(name)
-                    ? "Windows Defender Performance Tool"
-                    : $"Windows Defender Performance Tool — {name}";
-            });
+        _rawCountTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _rawCountTimer.Tick += (_, __) =>
+        {
+            var source = _fileListener ?? _liveListener;
+            if (source is not null)
+                TotalEventsProcessed = source.RawEventCount;
+        };
+        _rawCountTimer.Start();
 
         // Live monitoring requires admin
         if (startLiveMonitoring && IsRunningAsAdmin)
         {
             _liveListener = new EtwListener();
-            _liveSubscription = _liveListener.Events.Subscribe(
-                e => _eventsRelay.OnNext(e),
-                _ => { });
-            _liveRawSubscription = _liveListener.RawEventCount
-                .Sample(TimeSpan.FromSeconds(1))
-                .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe(count => TotalEventsProcessed = count);
+            _liveListener.EventReceived += _eventsRelay.Publish;
             _liveListener.Start();
         }
 
-        CopyHumanReadableCommand = ReactiveCommand.Create(CopyHumanReadable);
-        CopyJsonCommand = ReactiveCommand.Create(CopyJson);
-        ResetCommand = ReactiveCommand.Create(Reset);
-        OpenEtlFileCommand = ReactiveCommand.Create(OpenEtlFile);
-        RestartAsAdminCommand = ReactiveCommand.Create(RestartAsAdmin);
-        AddProcessExclusionCommand = ReactiveCommand.Create<string>(AddProcessExclusion);
-        OpenExclusionManagerCommand = ReactiveCommand.Create(OpenExclusionManager);
+        CopyHumanReadableCommand = new RelayCommand(CopyHumanReadable);
+        CopyJsonCommand = new RelayCommand(CopyJson);
+        ResetCommand = new RelayCommand(Reset);
+        OpenEtlFileCommand = new RelayCommand(OpenEtlFile);
+        RestartAsAdminCommand = new RelayCommand(RestartAsAdmin);
+        AddProcessExclusionCommand = new RelayCommand(p => AddProcessExclusion((string)p!));
+        OpenExclusionManagerCommand = new RelayCommand(OpenExclusionManager);
 
         _cpuTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _cpuTimer.Tick += (_, __) => PollCpuTimes();
         _cpuTimer.Start();
         PollCpuTimes();
-
-        _exclusionTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        _exclusionTimer.Tick += (_, __) => RefreshExclusionCountAsync();
-        _exclusionTimer.Start();
-        RefreshExclusionCountAsync();
     }
 
     /// <summary>Adds a Defender exclusion for the given process, asking for confirmation first.</summary>
@@ -254,44 +225,28 @@ public class MainViewModel : ReactiveObject, IDisposable
         var vm = new ExclusionManagerViewModel();
         var window = new ExclusionManagerWindow(vm) { Owner = Application.Current.MainWindow };
         window.ShowDialog();
-        RefreshExclusionCountAsync();
     }
 
-    private async void RefreshExclusionCountAsync()
+    // Called on the ETW processing thread — only appends under lock.
+    private void OnEventReceived(EventInfo info)
     {
-        if (_exclusionQueryRunning) return; // skip overlapping polls
-
-        if (!IsRunningAsAdmin)
-        {
-            ExclusionCountText = "?";
-            ExclusionTooltip =
-                "Windows Defender exclusions (paths, processes, extensions, IP addresses).\n" +
-                "Defender hides them from non-administrators — restart the tool as administrator to view and manage.";
-            return;
-        }
-
-        _exclusionQueryRunning = true;
-        try
-        {
-            var snapshot = await Task.Run(DefenderExclusionManager.GetExclusions);
-            ExclusionCountText = snapshot.TotalCount.ToString();
-            ExclusionTooltip =
-                $"Windows Defender exclusions: {snapshot.Paths.Count} paths, " +
-                $"{snapshot.Processes.Count} processes, {snapshot.Extensions.Count} extensions, " +
-                $"{snapshot.IpAddresses.Count} IP addresses.\nClick to open the exclusion manager.";
-        }
-        catch (Exception ex)
-        {
-            ExclusionCountText = "!";
-            ExclusionTooltip = $"Unable to query Defender exclusions:\n{ex.Message}";
-        }
-        finally
-        {
-            _exclusionQueryRunning = false;
-        }
+        lock (_pendingEvents)
+            _pendingEvents.Add(info);
     }
 
-    private void OnEventBatch(IList<EventInfo> batch)
+    private void OnBatchTimerTick(object? sender, EventArgs e)
+    {
+        List<EventInfo> batch;
+        lock (_pendingEvents)
+        {
+            if (_pendingEvents.Count == 0) return;
+            batch = new List<EventInfo>(_pendingEvents);
+            _pendingEvents.Clear();
+        }
+        OnEventBatch(batch);
+    }
+
+    private void OnEventBatch(List<EventInfo> batch)
     {
         foreach (var info in batch)
         {
@@ -422,17 +377,37 @@ public class MainViewModel : ReactiveObject, IDisposable
 
     private void CopyJson()
     {
-        var payload = new
+        static string Number(double value) => value.ToString(CultureInfo.InvariantCulture);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("{");
+        sb.Append("  \"generatedAt\": ").Append(SimpleJson.String(DateTime.Now.ToString("yyyy-MM-dd'T'HH:mm:sszzz"))).AppendLine(",");
+        sb.Append("  \"totalScannedSeconds\": ").Append(Number(TotalScannedSeconds)).AppendLine(",");
+
+        sb.AppendLine("  \"topProcesses\": [");
+        var processes = TopProcesses.ToList();
+        for (int i = 0; i < processes.Count; i++)
         {
-            generatedAt = DateTime.Now,
-            totalScannedSeconds = TotalScannedSeconds,
-            topProcesses = TopProcesses.Select(s => new { name = s.Name, totalSeconds = s.TotalSeconds }),
-            topFiles = _fileTotals
-                .OrderByDescending(kvp => kvp.Value)
-                .Take(TopN)
-                .Select(kvp => new { path = kvp.Key, totalSeconds = kvp.Value / 1000.0 })
-        };
-        Clipboard.SetText(JsonConvert.SerializeObject(payload, Formatting.Indented));
+            var s = processes[i];
+            sb.Append("    { \"name\": ").Append(SimpleJson.String(s.Name))
+              .Append(", \"totalSeconds\": ").Append(Number(s.TotalSeconds)).Append(" }")
+              .AppendLine(i < processes.Count - 1 ? "," : "");
+        }
+        sb.AppendLine("  ],");
+
+        sb.AppendLine("  \"topFiles\": [");
+        var files = _fileTotals.OrderByDescending(kvp => kvp.Value).Take(TopN).ToList();
+        for (int i = 0; i < files.Count; i++)
+        {
+            var kvp = files[i];
+            sb.Append("    { \"path\": ").Append(SimpleJson.String(kvp.Key))
+              .Append(", \"totalSeconds\": ").Append(Number(kvp.Value / 1000.0)).Append(" }")
+              .AppendLine(i < files.Count - 1 ? "," : "");
+        }
+        sb.AppendLine("  ]");
+
+        sb.AppendLine("}");
+        Clipboard.SetText(sb.ToString());
     }
 
     private void OpenEtlFile()
@@ -449,22 +424,18 @@ public class MainViewModel : ReactiveObject, IDisposable
 
     public void LoadEtlFile(string filePath)
     {
-        _fileSubscription?.Dispose();
-        _fileRawSubscription?.Dispose();
-        _fileListener?.Dispose();
+        if (_fileListener is not null)
+        {
+            _fileListener.EventReceived -= _eventsRelay.Publish;
+            _fileListener.Dispose();
+        }
 
         Reset();
 
         SnapshotName = Path.GetFileName(filePath);
 
         _fileListener = new EtwListener(filePath);
-        _fileSubscription = _fileListener.Events.Subscribe(
-            e => _eventsRelay.OnNext(e),
-            _ => { });
-        _fileRawSubscription = _fileListener.RawEventCount
-            .Sample(TimeSpan.FromSeconds(1))
-            .ObserveOn(RxApp.MainThreadScheduler)
-            .Subscribe(count => TotalEventsProcessed = count);
+        _fileListener.EventReceived += _eventsRelay.Publish;
         _fileListener.Start();
     }
 
@@ -533,16 +504,22 @@ public class MainViewModel : ReactiveObject, IDisposable
         _disposed = true;
 
         _cpuTimer.Stop();
-        _exclusionTimer.Stop();
-        _statsSubscription?.Dispose();
-        _liveSubscription?.Dispose();
-        _liveRawSubscription?.Dispose();
-        _fileSubscription?.Dispose();
-        _fileRawSubscription?.Dispose();
-        _liveListener?.Dispose();
-        _fileListener?.Dispose();
+        _batchTimer.Stop();
+        _rawCountTimer.Stop();
+
+        _eventsRelay.Received -= OnEventReceived;
+
+        if (_liveListener is not null)
+        {
+            _liveListener.EventReceived -= _eventsRelay.Publish;
+            _liveListener.Dispose();
+        }
+        if (_fileListener is not null)
+        {
+            _fileListener.EventReceived -= _eventsRelay.Publish;
+            _fileListener.Dispose();
+        }
+
         _plotter.Dispose();
-        _eventsRelay.OnCompleted();
-        _eventsRelay.Dispose();
     }
 }
