@@ -23,6 +23,7 @@ namespace WindowsDefenderPerformanceTool.Tests.UiAutomation;
 /// appears — then answers "No", leaving the machine's Defender configuration untouched.
 /// </summary>
 [Trait("Category", "RequiresElevation")]
+[Collection(UiAutomationCollection.Name)]
 public class TopProcessesContextMenuUiTests : IDisposable
 {
     private const uint WmRButtonDown = 0x0204;

@@ -16,6 +16,7 @@ namespace WindowsDefenderPerformanceTool.Tests.UiAutomation;
 /// otherwise they are skipped.
 /// </summary>
 [Trait("Category", "RequiresElevation")]
+[Collection(UiAutomationCollection.Name)]
 public class ExclusionPersistenceUiTests
 {
     [SkippableFact]

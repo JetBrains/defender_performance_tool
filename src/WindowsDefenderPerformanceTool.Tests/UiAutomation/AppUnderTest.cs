@@ -36,7 +36,17 @@ public sealed class AppUnderTest : IDisposable
                 () => TopLevelWindows().FirstOrDefault(
                     w => SafeTitle(w).StartsWith("Windows Defender Performance Tool", StringComparison.Ordinal)),
                 timeout: LaunchTimeout, interval: PollInterval, ignoreException: true)
-            .Result ?? throw new InvalidOperationException("The main window never appeared.");
+            .Result;
+        if (_mainWindow == null)
+        {
+            // Distinguish the two failure modes in CI logs: an unhandled startup exception
+            // (e.g. ETW session-name collision — exit code -532462766 / 0xE0434352) vs. a
+            // live process whose window genuinely never materialized (no interactive desktop).
+            throw new InvalidOperationException(_app.HasExited
+                ? $"The app process exited with code {_app.ExitCode} before showing its main window."
+                : "The app is still running after " + LaunchTimeout +
+                  " but its main window never appeared (no interactive desktop?).");
+        }
     }
 
     /// <summary>Clicks the "Exclusions" button on the main window and wraps the dialog that opens.</summary>

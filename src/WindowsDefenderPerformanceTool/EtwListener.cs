@@ -12,7 +12,12 @@ namespace WindowsDefenderPerformanceTool;
 
 public sealed class EtwListener : IDisposable
 {
-    private const string SessionName = "WindowsDefenderPerformanceToolSession";
+    // Unique per process: with TraceEventSession's default restart-on-create semantics a
+    // fixed name makes concurrent instances stop each other's sessions, and two instances
+    // racing through that stop/restart window make StartTrace fail outright — crashing the
+    // app before its main window appears (observed when UI tests launched instances in parallel).
+    private static readonly string SessionName =
+        "WindowsDefenderPerformanceToolSession-" + Process.GetCurrentProcess().Id;
 
     private readonly Subject<EventInfo> _eventSubject = new();
     private readonly Subject<long> _rawEventCount = new();
