@@ -7,6 +7,8 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>WindowsDefenderPerformanceTool_Light_CpuTimeOnly_TUI</AssemblyName>
     <Version>1.0.0</Version>
+    <!-- Shared icon from the WPF project -->
+    <ApplicationIcon>..\WindowsDefenderPerformanceTool\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

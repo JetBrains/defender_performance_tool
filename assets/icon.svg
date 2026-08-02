@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="shieldFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5FB2F7"/>
+      <stop offset="1" stop-color="#0A5AB0"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="barFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#D9EDFF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Shield body -->
+  <path fill="url(#shieldFill)"
+        d="M128 14 C166 32 196 40 220 44 C220 134 196 196 128 242 C60 196 36 134 36 44 C60 40 90 32 128 14 Z"/>
+  <!-- Outline -->
+  <path fill="none" stroke="#063466" stroke-opacity="0.55" stroke-width="7" stroke-linejoin="round"
+        d="M128 14 C166 32 196 40 220 44 C220 134 196 196 128 242 C60 196 36 134 36 44 C60 40 90 32 128 14 Z"/>
+  <!-- Gloss -->
+  <path fill="url(#shine)"
+        d="M128 14 C166 32 196 40 220 44 C219 80 214 108 204 132 C158 148 98 148 52 132 C42 108 37 80 36 44 C60 40 90 32 128 14 Z"/>
+
+  <!-- Bar chart -->
+  <g fill="url(#barFill)">
+    <rect x="74"  y="136" width="26" height="40"  rx="5"/>
+    <rect x="115" y="102" width="26" height="74"  rx="5"/>
+    <rect x="156" y="70"  width="26" height="106" rx="5"/>
+  </g>
+</svg>

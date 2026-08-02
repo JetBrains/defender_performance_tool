@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
 
     <!-- Package configuration for publishing -->
     <AssemblyName>WindowsDefenderPerformanceTool</AssemblyName>
@@ -25,6 +26,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Lib\Lib.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Embedded so the window can reference it via Icon="icon.ico" -->
+    <Resource Include="icon.ico" />
   </ItemGroup>
 
   <ItemGroup>
