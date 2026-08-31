@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+
+    <!-- Package configuration for publishing -->
+    <AssemblyName>DefenderPerformanceTool</AssemblyName>
+    <PackageId>DefenderPerformanceTool</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Your Name</Authors>
+    <Description>A Microsoft Defender ETW performance tool that visualizes scan durations in real-time</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Hosts the PowerShell engine in-process (Get/Add/Remove-MpPreference) — resolved from the GAC. -->
+    <Reference Include="System.Management.Automation">
+      <HintPath>$(WINDIR)\Microsoft.NET\assembly\GAC_MSIL\System.Management.Automation\v4.0_3.0.0.0__31bf3856ad364e35\System.Management.Automation.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Lib\Lib.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Embedded so the window can reference it via Icon="icon.ico" -->
+    <Resource Include="icon.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Costura.Fody" Version="5.7.0" PrivateAssets="all" />
+    <PackageReference Include="Fody" Version="6.8.2" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.16" />
+    <PackageReference Include="ScottPlot.WPF" Version="4.1.74" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- After publish, remove loose DLLs — Costura.Fody has already embedded them in the EXE -->
+  <Target Name="CleanupPublishOutput" AfterTargets="Publish" Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
+      <PublishedDlls Include="$(PublishDir)**\*.dll" />
+      <PublishedPdbs Include="$(PublishDir)**\*.pdb" />
+    </ItemGroup>
+    <Delete Files="@(PublishedDlls);@(PublishedPdbs)" />
+    <RemoveDir Directories="$(PublishDir)x86" />
+    <RemoveDir Directories="$(PublishDir)amd64" />
+  </Target>
+</Project>

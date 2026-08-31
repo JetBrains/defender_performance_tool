@@ -13,7 +13,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-if (-not $IcoPath)    { $IcoPath    = Join-Path $scriptDir '..\src\WindowsDefenderPerformanceTool\icon.ico' }
+if (-not $IcoPath)    { $IcoPath    = Join-Path $scriptDir '..\src\DefenderPerformanceTool\icon.ico' }
 if (-not $PreviewDir) { $PreviewDir = $scriptDir }
 
 Add-Type -AssemblyName PresentationCore
