@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="DefenderPerformanceTool/DefenderPerformanceTool.csproj" />
+  <Project Path="Lib/Lib.csproj" />
+  <Project Path="DefenderCpuTime/DefenderCpuTime.csproj" />
+  <Project Path="DefenderPerformanceTool.Tests/DefenderPerformanceTool.Tests.csproj" />
+</Solution>

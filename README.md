@@ -1,4 +1,4 @@
-# Windows Defender Performance Tool
+# Defender Performance Tool
 
 A .NET application that monitors Microsoft Defender ETW events and visualizes
 scan durations in real-time using a stacked bar chart. Can also visualize
@@ -22,7 +22,7 @@ You can find more information about investigating Microsoft Defender performance
 
 ## Lightweight CPU-time TUI
 
-A companion console program (`WindowsDefenderPerformanceTool_Light_CpuTimeOnly_TUI`) tracks only CPU time (using GetProcessTimes) consumed by
+A companion console program (`DefenderPerformanceTool_Light_CpuTimeOnly_TUI`) tracks only CPU time (using GetProcessTimes) consumed by
 `MsMpEng.exe` (Defender’s antimalware service) and renders a small bar chart of recent activity. It does **not** require elevation — CPU times are read
 via `NtQuerySystemInformation`, which is available to non-admin users.
 
