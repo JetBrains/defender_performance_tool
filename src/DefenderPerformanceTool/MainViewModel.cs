@@ -23,7 +23,7 @@ namespace DefenderPerformanceTool;
 public class MainViewModel : ViewModelBase, IDisposable
 {
     private const int TopN = 30;
-    private const string DefaultWindowTitle = "Microsoft Defender Performance Tool";
+    private const string DefaultWindowTitle = "Defender Performance Tool";
 
     // Stats dictionary bounds: pruned to the largest entries when exceeded, so long
     // sessions can't grow memory or RefreshStats() cost without limit.

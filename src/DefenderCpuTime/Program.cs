@@ -89,7 +89,7 @@ namespace DefenderCpuTime
       Console.SetCursorPosition(0, 0);
       int w = Math.Max(Console.WindowWidth - 1, 40);
 
-      PrintLine("  Microsoft Defender CPU Time Monitor", w);
+      PrintLine("  Defender CPU Time Monitor", w);
       PrintLine("  R = reset accumulated  |  Enter = exit", w);
       PrintLine("", w);
       PrintLine("  CPU time / second (last 16s)", w);
