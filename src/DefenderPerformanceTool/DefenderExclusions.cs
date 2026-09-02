@@ -72,7 +72,7 @@ public static class DefenderExclusions
             // powershell.exe — ask the user to restart the tool with administrator rights.
             MessageBox.Show(
                 "Adding a Defender exclusion requires administrator privileges.\n\n" +
-                "Please restart Microsoft Defender Performance Tool as administrator and try again.",
+                "Please restart Defender Performance Tool as administrator and try again.",
                 "Add Defender Exclusion", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }

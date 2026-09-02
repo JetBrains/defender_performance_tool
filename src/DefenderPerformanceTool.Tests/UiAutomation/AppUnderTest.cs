@@ -37,7 +37,7 @@ public sealed class AppUnderTest : IDisposable
         _app = Application.Launch(ResolveExePath());
         _mainWindow = Retry.WhileNull(
                 () => TopLevelWindows().FirstOrDefault(
-                    w => SafeTitle(w).StartsWith("Microsoft Defender Performance Tool", StringComparison.Ordinal)),
+                    w => SafeTitle(w).StartsWith("Defender Performance Tool", StringComparison.Ordinal)),
                 timeout: LaunchTimeout, interval: PollInterval, ignoreException: true)
             .Result;
         if (_mainWindow == null)
